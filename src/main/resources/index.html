@@ -1,0 +1,597 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>LogAnchor-X — Live Provenance Graph &amp; SOC Dashboard (Phase 3)</title>
+    <!-- Lightweight D3.js (via CDN) with offline fallback safety -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <style>
+        :root {
+          --bg: #0a0e14;
+          --surface: #0f141c;
+          --surface-2: #161d28;
+          --border: #1e293b;
+          --cyan: #00f0ff;
+          --green: #39ff88;
+          --red: #ff3366;
+          --amber: #ffaa00;
+          --purple: #b388ff;
+          --text: #e2e8f0;
+          --muted: #64748b;
+          --mono: "JetBrains Mono", Consolas, monospace;
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: var(--sans);
+          background: var(--bg);
+          color: var(--text);
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+        }
+        header {
+          background: var(--surface);
+          border-bottom: 1px solid var(--border);
+          padding: 10px 24px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: sticky;
+          top: 0;
+          z-index: 20;
+        }
+        .brand { display: flex; align-items: center; gap: 10px; }
+        .brand-icon {
+          font-size: 20px;
+          background: linear-gradient(135deg, var(--cyan), #0077ff);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-weight: 800;
+        }
+        .brand-title { font-size: 16px; font-weight: 700; letter-spacing: 0.05em; }
+        .badge {
+          font-size: 11px;
+          font-family: var(--mono);
+          padding: 3px 8px;
+          border-radius: 4px;
+          border: 1px solid var(--border);
+          color: var(--muted);
+        }
+        .badge.active { border-color: rgba(57,255,136,0.3); color: var(--green); background: rgba(57,255,136,0.05); }
+
+        main {
+          flex: 1;
+          max-width: 1550px;
+          width: 100%;
+          margin: 0 auto;
+          padding: 16px 24px 40px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .grid-top {
+          display: grid;
+          grid-template-columns: 360px 1fr 380px;
+          gap: 16px;
+          align-items: stretch;
+        }
+        @media (max-width: 1250px) { .grid-top { grid-template-columns: 1fr; } }
+
+        .card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .card-title {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        textarea {
+          width: 100%;
+          height: 70px;
+          background: var(--bg);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          color: var(--text);
+          font-family: var(--mono);
+          font-size: 11px;
+          padding: 8px;
+          resize: vertical;
+        }
+        textarea:focus { outline: none; border-color: var(--cyan); }
+
+        .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        button {
+          padding: 6px 12px;
+          font-size: 11px;
+          font-weight: 600;
+          border-radius: 4px;
+          border: none;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          transition: opacity 0.15s;
+        }
+        button:hover { opacity: 0.85; }
+        .btn-cyan { background: var(--cyan); color: #000; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+        .btn-outline:hover { border-color: var(--cyan); color: var(--cyan); }
+        .btn-red { background: rgba(255,51,102,0.15); border: 1px solid var(--red); color: var(--red); }
+        .btn-red:hover { background: var(--red); color: #fff; }
+
+        .kv { display: flex; flex-direction: column; gap: 3px; }
+        .kv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+        .kv-val {
+          font-family: var(--mono);
+          font-size: 11px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          padding: 6px 8px;
+          word-break: break-all;
+        }
+        .kv-val.highlight { color: var(--cyan); }
+
+        /* D3 Provenance Graph Center Container */
+        #graphContainer {
+          width: 100%;
+          height: 380px;
+          background: #06090e;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          position: relative;
+          overflow: hidden;
+        }
+        .graph-legend {
+          position: absolute;
+          top: 10px;
+          left: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          font-size: 10px;
+          font-family: var(--mono);
+          background: rgba(15,20,28,0.85);
+          padding: 6px 10px;
+          border-radius: 4px;
+          border: 1px solid var(--border);
+          pointer-events: none;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* Node & Edge Styles */
+        .node-circle {
+          cursor: pointer;
+          stroke-width: 2px;
+          transition: r 0.2s;
+        }
+        .node-circle:hover { r: 12px; }
+        .node-label {
+          font-family: var(--mono);
+          font-size: 9px;
+          fill: var(--text);
+          pointer-events: none;
+          text-shadow: 0 0 3px #000;
+        }
+        .edge-line {
+          stroke-dasharray: 4, 3;
+          animation: flow 1s linear infinite;
+        }
+        @keyframes flow {
+          from { stroke-dashoffset: 7; }
+          to { stroke-dashoffset: 0; }
+        }
+
+        /* Side drawer / modal detail */
+        .node-detail-panel {
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          padding: 10px;
+          font-size: 11px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        /* Verification status boxes */
+        .status-box {
+          padding: 8px 10px;
+          border-radius: 4px;
+          font-size: 11px;
+          line-height: 1.4;
+          font-family: var(--mono);
+        }
+        .status-box.ok { background: rgba(57,255,136,0.1); border: 1px solid var(--green); color: var(--green); }
+        .status-box.err { background: rgba(255,51,102,0.1); border: 1px solid var(--red); color: var(--red); }
+
+        /* MITRE Matrix */
+        .matrix-wrapper { overflow-x: auto; padding-bottom: 6px; }
+        .matrix-grid { display: flex; gap: 8px; min-width: 1400px; }
+        .tactic-col {
+          flex: 1;
+          min-width: 85px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 4px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .tactic-header { background: #1a2230; padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: center; }
+        .tactic-id { font-size: 8px; font-family: var(--mono); color: var(--cyan); font-weight: 700; }
+        .tactic-title { font-size: 9px; font-weight: 600; color: var(--text); line-height: 1.2; margin-top: 1px; }
+        .technique-list { padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+        .tech-cell {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 3px;
+          padding: 4px 6px;
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .tech-cell.active { border-color: var(--red); background: rgba(255,51,102,0.1); }
+        .tech-top { display: flex; justify-content: space-between; font-size: 8px; font-family: var(--mono); }
+        .tech-badge { background: var(--border); padding: 1px 4px; border-radius: 2px; }
+        .tech-cell.active .tech-badge { background: var(--red); color: #fff; }
+        .tech-name { font-size: 9px; color: var(--text); line-height: 1.1; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="brand">
+        <span class="brand-icon">&#x2693;</span>
+        <span class="brand-title">LogAnchor-X</span>
+        <span class="badge">Phase 3: Live Provenance Graph &amp; Forensic Evidence Export</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <a href="/api/evidence-bundle" style="text-decoration:none;">
+            <button class="btn-cyan">&#x1F4E6; Download Evidence Bundle</button>
+        </a>
+        <span class="badge active">&#x25CF; Engine Active</span>
+        <span class="badge" id="batchCountBadge">Batches: 0</span>
+    </div>
+</header>
+
+<main>
+    <!-- Top 3-Column Layout: Left Ingest | Center D3 Graph | Right Node Detail & Tamper -->
+    <div class="grid-top">
+
+        <!-- Column 1: Ingest & Quick Vectors -->
+        <div class="card">
+            <div class="card-title">
+                <span>1. Ingest Log Stream</span>
+                <span style="font-size:9px;color:var(--muted)">Triple-Key Indexed</span>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn-outline" onclick="loadSample('scan')">1. Recon (Port Scan)</button>
+                <button class="btn-outline" onclick="loadSample('ssh')">2. Credential (SSH)</button>
+                <button class="btn-outline" onclick="loadSample('priv')">3. PrivEsc (Sudo)</button>
+                <button class="btn-outline" onclick="loadSample('exfil')">4. Exfil (50MB Dump)</button>
+            </div>
+
+            <textarea id="rawLog" placeholder="Paste a raw log string here..."></textarea>
+
+            <div class="btn-group">
+                <button class="btn-cyan" onclick="parseLog()">&#x26A1; Ingest &amp; Update Graph</button>
+                <button class="btn-outline" onclick="forceAnchor()">&#x1F512; Seal Batch</button>
+            </div>
+
+            <div class="kv">
+                <div class="kv-label">SHA-256 Leaf Hash (T=0 Invariant)</div>
+                <div class="kv-val highlight" id="leafHashVal">&#8212;</div>
+            </div>
+
+            <div class="kv">
+                <div class="kv-label">Heuristic Correlation Note</div>
+                <div style="font-size:10px;color:var(--muted);line-height:1.4;">
+                    *Edges are rule-based causal links capped by confidence tiers: High (Kill-Chain Verified) vs Medium (Coincident).
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: Center D3 Force-Directed Provenance Graph -->
+        <div class="card">
+            <div class="card-title">
+                <span>2. Live Attack Provenance Graph (D3 Force Simulation)</span>
+                <button class="btn-outline" onclick="loadProvenanceGraph()" style="padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
+            </div>
+
+            <div id="graphContainer">
+                <div class="graph-legend">
+                    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan);"></div><span>Reconnaissance</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:var(--amber);"></div><span>Credential Access</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:var(--purple);"></div><span>Privilege Escalation</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:var(--red);"></div><span>Exfiltration</span></div>
+                </div>
+                <svg id="graphSvg" width="100%" height="100%"></svg>
+            </div>
+        </div>
+
+        <!-- Column 3: Selected Node Inspector & Merkle Verification -->
+        <div class="card">
+            <div class="card-title">
+                <span>3. Selected Node &amp; Cryptographic Proof</span>
+            </div>
+
+            <div id="nodeDetail" class="node-detail-panel">
+                <div style="color:var(--muted);text-align:center;padding:12px 0;">Click any node in the provenance graph to inspect payload and verify Merkle proof.</div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn-cyan" onclick="verifyActiveLeaf()">&#x1F50E; Verify Stored Leaf</button>
+                <button class="btn-red" onclick="simulateTamper()">&#x26A0; Tamper Scratch Leaf</button>
+            </div>
+
+            <div id="statusBox" class="status-box" style="display:none;"></div>
+
+            <div class="kv">
+                <div class="kv-label">Recomputed vs. Anchored Root</div>
+                <div class="kv-val" id="rootsComparison">&#8212;</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Row 2: Complete 14-Tactic MITRE Matrix -->
+    <div class="card">
+        <div class="card-title">
+            <span>4. MITRE ATT&amp;CK&reg; Heatmap Matrix (14 Tactics)</span>
+            <span style="font-size:10px;color:var(--muted)">Rule-based heuristic tags</span>
+        </div>
+
+        <div class="matrix-wrapper">
+            <div class="matrix-grid" id="matrixGrid">
+                <div style="font-size:11px;color:var(--muted);padding:8px;">Loading MITRE Matrix...</div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    var SAMPLES = {
+      scan: "CEF:0|NetSec|FW|1.0|100|PORT_SCAN|Low|src=10.0.0.5 dst=192.168.1.1 proto=TCP dpt=22",
+      ssh:  "Sep 09 15:30:01 auth-gateway sshd[5120]: Failed password for invalid user root from 10.0.0.5 port 42102 ssh2",
+      priv: "Sep 09 15:32:10 target-node sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.5",
+      exfil:"CEF:0|NetSec|FW|1.0|200|LARGE_TRANSFER|High|src=10.0.0.5 dst=203.0.113.42 bytes=52428800"
+    };
+
+    var activeLeaf = "";
+    var activeNode = null;
+
+    function loadSample(key) {
+      document.getElementById("rawLog").value = SAMPLES[key] || "";
+    }
+
+    function parseLog() {
+      var raw = document.getElementById("rawLog").value.trim();
+      if (!raw) return;
+
+      fetch("/api/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log: raw })
+      })
+      .then(r => r.json())
+      .then(d => {
+        activeLeaf = d.leafHash;
+        document.getElementById("leafHashVal").textContent = d.leafHash;
+        refreshStatus();
+        loadMitreMatrix();
+        loadProvenanceGraph();
+      });
+    }
+
+    function forceAnchor() {
+      fetch("/api/anchor", { method: "POST" })
+        .then(r => r.json())
+        .then(d => {
+          refreshStatus();
+          alert("Batch #" + d.batchId + " sealed with " + d.leavesAnchored + " leaves.");
+        });
+    }
+
+    // ── D3.js Force-Directed Graph Rendering ──────────────────────────────────
+    function loadProvenanceGraph() {
+      fetch("/api/provenance-graph")
+        .then(r => r.json())
+        .then(graph => {
+          renderD3Graph(graph.nodes || [], graph.edges || []);
+        });
+    }
+
+    function renderD3Graph(nodes, edges) {
+      var svg = d3.select("#graphSvg");
+      svg.selectAll("*").remove();
+
+      var width = document.getElementById("graphContainer").clientWidth;
+      var height = document.getElementById("graphContainer").clientHeight;
+
+      if (!nodes.length) {
+        svg.append("text")
+          .attr("x", width / 2).attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .attr("fill", "var(--muted)")
+          .attr("font-size", "11px")
+          .attr("font-family", "var(--mono)")
+          .text("Ingest log vectors to generate live causal provenance graph.");
+        return;
+      }
+
+      var colorMap = {
+        1: "var(--cyan)",    // Recon
+        2: "var(--cyan)",    // Initial
+        3: "var(--amber)",   // Credential
+        4: "var(--purple)",  // PrivEsc
+        5: "var(--purple)",  // Lateral
+        6: "var(--red)"      // Exfil
+      };
+
+      var simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(edges).id(d => d.id).distance(80))
+        .force("charge", d3.forceManyBody().strength(-150))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(25));
+
+      // Draw Links
+      var link = svg.append("g")
+        .selectAll("line")
+        .data(edges)
+        .enter().append("line")
+        .attr("class", "edge-line")
+        .attr("stroke", d => d.confidence.includes("HIGH") ? "rgba(0,240,255,0.7)" : "rgba(100,116,139,0.4)")
+        .attr("stroke-width", d => d.confidence.includes("HIGH") ? 2 : 1);
+
+      // Draw Nodes
+      var node = svg.append("g")
+        .selectAll("circle")
+        .data(nodes)
+        .enter().append("circle")
+        .attr("class", "node-circle")
+        .attr("r", 9)
+        .attr("fill", d => colorMap[d.stage] || "var(--muted)")
+        .attr("stroke", "#fff")
+        .on("click", (evt, d) => inspectNode(d));
+
+      // Draw Node Labels
+      var labels = svg.append("g")
+        .selectAll("text")
+        .data(nodes)
+        .enter().append("text")
+        .attr("class", "node-label")
+        .attr("dx", 12).attr("dy", 4)
+        .text(d => d.mitreId);
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+
+        node
+          .attr("cx", d => Math.max(15, Math.min(width - 15, d.x)))
+          .attr("cy", d => Math.max(15, Math.min(height - 15, d.y)));
+
+        labels
+          .attr("x", d => Math.max(15, Math.min(width - 15, d.x)))
+          .attr("y", d => Math.max(15, Math.min(height - 15, d.y)));
+      });
+    }
+
+    function inspectNode(node) {
+      activeNode = node;
+      activeLeaf = node.leafHash;
+
+      document.getElementById("leafHashVal").textContent = node.leafHash;
+      document.getElementById("nodeDetail").innerHTML = `
+        <div><strong>Event ID:</strong> ${node.id}</div>
+        <div><strong>MITRE:</strong> <span style="color:var(--cyan)">${node.mitreId} - ${node.mitreTechnique}</span></div>
+        <div><strong>Tactic:</strong> ${node.tactic}</div>
+        <div><strong>Source:</strong> ${node.sourceIp}</div>
+        <div style="word-break:break-all;color:var(--muted);"><strong>Payload:</strong> ${node.raw}</div>
+        <div style="word-break:break-all;font-size:10px;color:var(--cyan)"><strong>Leaf Hash:</strong> ${node.leafHash}</div>
+      `;
+    }
+
+    function verifyActiveLeaf() {
+      if (!activeLeaf) {
+        alert("Select a node from the graph or ingest a log first.");
+        return;
+      }
+
+      fetch(`/api/verify?leafHash=${activeLeaf}`)
+        .then(r => r.json())
+        .then(d => renderVerification(d));
+    }
+
+    function simulateTamper() {
+      if (!activeLeaf) {
+        alert("Select a node from the graph or ingest a log first.");
+        return;
+      }
+
+      fetch("/api/tamper-simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leafHash: activeLeaf })
+      })
+      .then(r => r.json())
+      .then(d => renderVerification(d));
+    }
+
+    function renderVerification(d) {
+      var box = document.getElementById("statusBox");
+      box.style.display = "block";
+      box.className = "status-box " + (d.valid ? "ok" : "err");
+      box.innerHTML = `
+        <strong>${d.valid ? "&#x2714; CRYPTOGRAPHIC PROOF VALIDATED" : "&#x26A0; " + d.message}</strong><br/>
+        <span>Batch #${d.batchId || "N/A"}</span>
+      `;
+
+      document.getElementById("rootsComparison").innerHTML = `
+        Recomputed: <span style="color:${d.valid ? 'var(--green)' : 'var(--red)'}">${d.recomputedRoot || "N/A"}</span><br/>
+        Anchored:   <span style="color:var(--cyan)">${d.anchoredRoot || "N/A"}</span>
+      `;
+    }
+
+    function loadMitreMatrix() {
+      fetch("/api/mitre-matrix")
+        .then(r => r.json())
+        .then(d => {
+          var grid = document.getElementById("matrixGrid");
+          grid.innerHTML = (d.tactics || []).map(tac => `
+            <div class="tactic-col">
+              <div class="tactic-header">
+                <div class="tactic-id">${tac.id}</div>
+                <div class="tactic-title">${tac.name}</div>
+              </div>
+              <div class="technique-list">
+                ${(tac.techniques || []).map(tech => `
+                  <div class="tech-cell ${tech.count > 0 ? 'active' : ''}">
+                    <div class="tech-top">
+                      <span>${tech.id}</span>
+                      <span class="tech-badge">${tech.count}</span>
+                    </div>
+                    <div class="tech-name">${tech.name}</div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          `).join("");
+        });
+    }
+
+    function refreshStatus() {
+      fetch("/api/status")
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById("batchCountBadge").textContent = "Batches: " + d.batchesAnchored + " (Pending: " + d.pendingInBatch + "/64)";
+        });
+    }
+
+    setInterval(refreshStatus, 3000);
+    refreshStatus();
+    loadMitreMatrix();
+    loadProvenanceGraph();
+</script>
+</body>
+</html>

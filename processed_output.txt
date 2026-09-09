@@ -1,0 +1,6 @@
+Original: Sep 08 14:23:45 server1 sshd[1234]: Failed password for root from 192.168.1.50 port 22 ssh2 | Template: Sep 08 14:23:45 server1 sshd[1234]: Failed password for root from <IP> port 22 ssh2
+Original: Sep 08 14:25:10 server1 sshd[5678]: Failed password for admin from 10.0.0.15 port 22 ssh2 | Template: Sep 08 <*> server1 <*> Failed password for <*> from <IP> port 22 ssh2
+Original: 2026-09-08 14:27:33 ERR Database connection timeout at 192.168.100.22 | Template: 2026-09-08 14:27:33 ERR Database connection timeout at <IP>
+Original: 2026-09-08 14:29:15 ERR Database connection timeout at 10.10.10.10 | Template: 2026-09-08 <*> ERR Database connection timeout at <IP>
+Original: [2026-09-08 14:25:01] INFO [main] AuthController - User admin logged in successfully from 10.0.0.15 | Template: [2026-09-08 14:25:01] INFO [main] AuthController - User admin logged in successfully from <IP>
+Original: [2026-09-08 14:26:05] INFO [main] AuthController - User guest logged in successfully from 192.168.1.50 | Template: [2026-09-08 <*> INFO [main] AuthController - User <*> logged in successfully from <IP>
