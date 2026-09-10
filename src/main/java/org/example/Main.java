@@ -9,6 +9,8 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
@@ -16,7 +18,7 @@ import java.util.regex.*;
 /**
  * LogAnchor-X — Universal Log Pre-processing Framework (SIH 2026, PS 26156)
  * Organisation: NTRO | Theme: Blockchain & Cybersecurity
- * Phase 3: In-Memory Causal Provenance Graph & Forensic Evidence Bundle
+ * Phase 4: Automated APT Simulation Player & Gamified SOC Telemetry Engine
  */
 public class Main {
 
@@ -47,9 +49,15 @@ public class Main {
     static final List<Event> pendingBuffer = new ArrayList<>();
     static final List<Event> allIngestedEvents = Collections.synchronizedList(new ArrayList<>());
     static long totalIngested = 0;
+    static long integrityChecksPassed = 0;
+    static final Set<String> detectedFormats = ConcurrentHashMap.newKeySet();
 
     // ── MITRE ATT&CK Counts ──────────────────────────────────────────────────
     static final Map<String, Integer> mitreTechniqueCounts = new ConcurrentHashMap<>();
+
+    // ── Simulation State ─────────────────────────────────────────────────────
+    static volatile boolean simRunning = false;
+    static volatile String  simCurrentStage = "IDLE";
 
     // ── Anchored Ledger & Merkle Batches ────────────────────────────────────
     static class Batch {
@@ -86,16 +94,21 @@ public class Main {
     }
 
     // ── Multi-Format Adapters ───────────────────────────────────────────────
-    interface LogAdapter { int confidence(String raw); String normalize(String raw); }
+    interface LogAdapter { String name(); int confidence(String raw); String normalize(String raw); }
 
     static final List<LogAdapter> ADAPTERS = List.of(
             new CefAdapter(), new LeefAdapter(), new XmlAdapter(),
             new JsonAdapter(), new CsvAdapter(), new FlatTextAdapter());
 
-    static String route(String raw) {
+    static class RouteResult { String normalized; String formatName; }
+
+    static RouteResult route(String raw) {
         LogAdapter best = null; int bestScore = -1;
         for (LogAdapter a : ADAPTERS) { int c = a.confidence(raw); if (c > bestScore) { bestScore = c; best = a; } }
-        return best != null ? best.normalize(raw) : raw;
+        RouteResult rr = new RouteResult();
+        rr.normalized = best != null ? best.normalize(raw) : raw;
+        rr.formatName = best != null ? best.name() : "SYSLOG";
+        return rr;
     }
 
     static List<String> splitUnescaped(String s, char delim) {
@@ -110,6 +123,7 @@ public class Main {
     }
 
     static class CefAdapter implements LogAdapter {
+        public String name() { return "CEF"; }
         public int confidence(String raw) { return raw.trim().startsWith("CEF:") ? 95 : 0; }
         public String normalize(String raw) {
             List<String> p = splitUnescaped(raw.trim(), '|');
@@ -120,6 +134,7 @@ public class Main {
         }
     }
     static class LeefAdapter implements LogAdapter {
+        public String name() { return "LEEF"; }
         public int confidence(String raw) { return raw.trim().startsWith("LEEF:") ? 95 : 0; }
         public String normalize(String raw) {
             String t = raw.trim(); int tab = t.indexOf('\t');
@@ -133,6 +148,7 @@ public class Main {
     }
     static class XmlAdapter implements LogAdapter {
         static final Pattern AR = Pattern.compile("(\\w+)=\"[^\"]*\"");
+        public String name() { return "XML"; }
         public int confidence(String raw) { String t = raw.trim(); return (t.startsWith("<") && t.endsWith(">")) ? 85 : 0; }
         public String normalize(String raw) {
             String text = raw.replaceAll("<[^>]+>"," ").trim().replaceAll("\\s+"," ");
@@ -143,14 +159,17 @@ public class Main {
         }
     }
     static class JsonAdapter implements LogAdapter {
+        public String name() { return "JSON"; }
         public int confidence(String raw) { return raw.trim().startsWith("{") ? 90 : 0; }
         public String normalize(String raw) { return raw.trim().replaceAll("[{}\".,:]", " "); }
     }
     static class CsvAdapter implements LogAdapter {
+        public String name() { return "CSV"; }
         public int confidence(String raw) { long c = raw.trim().chars().filter(x -> x==',').count(); return c>=2 && !raw.contains("|") ? 60 : 0; }
         public String normalize(String raw) { StringBuilder sb = new StringBuilder("CSV"); for (String col : raw.trim().split(",",-1)) sb.append(' ').append(mask(col.trim())); return sb.toString(); }
     }
     static class FlatTextAdapter implements LogAdapter {
+        public String name() { return "SYSLOG"; }
         public int confidence(String raw) { return 10; }
         public String normalize(String raw) { return raw; }
     }
@@ -226,8 +245,9 @@ public class Main {
 
     // ── Ingest Pipeline ──────────────────────────────────────────────────────
     static synchronized Event ingest(String raw) {
-        String normalized = route(raw);
-        String masked     = mask(normalized);
+        RouteResult rr = route(raw);
+        detectedFormats.add(rr.formatName);
+        String masked     = mask(rr.normalized);
         String[] words    = masked.split(" ");
         String firstWord  = words.length > 0 ? words[0] : "";
 
@@ -271,6 +291,27 @@ public class Main {
             anchorBatch();
         }
         return ev;
+    }
+
+    // ── Threat Score Calculation (Gamified Rule-Based Composite) ────────────
+    static int calculateThreatScore() {
+        int score = 0;
+        int stagesCovered = 0;
+        Set<Integer> activeStages = new HashSet<>();
+        synchronized (allIngestedEvents) {
+            for (Event e : allIngestedEvents) {
+                if (e.killChainStage > 0) activeStages.add(e.killChainStage);
+            }
+        }
+        stagesCovered = activeStages.size();
+
+        // 1 stage = 20, 2 stages = 45, 3 stages = 70, 4+ stages = 95
+        if (stagesCovered == 1) score = 25;
+        else if (stagesCovered == 2) score = 55;
+        else if (stagesCovered == 3) score = 78;
+        else if (stagesCovered >= 4) score = 96;
+
+        return Math.min(100, Math.max(0, score));
     }
 
     // ── Merkle Tree & Batch Anchoring ────────────────────────────────────────
@@ -337,6 +378,8 @@ public class Main {
         }
 
         boolean valid = recomputed.equals(b.merkleRoot);
+        if (valid) integrityChecksPassed++;
+
         res.put("valid", valid);
         res.put("leafHash", leafHash);
         res.put("batchId", b.id);
@@ -348,7 +391,7 @@ public class Main {
         return res;
     }
 
-    // ── Ledger Persistence & Recovery ────────────────────────────────────────
+    // ── Persistence ──────────────────────────────────────────────────────────
     static synchronized void persistLedger(Batch b) {
         try {
             StringBuilder sb = new StringBuilder();
@@ -379,6 +422,51 @@ public class Main {
             }
             System.out.println("[+] Loaded " + batches.size() + " anchored batches from ledger.");
         } catch (Exception e) { System.out.println("[!] Ledger recovery error: " + e.getMessage()); }
+    }
+
+    // ── Automated APT Attack Simulator (Phase 4) ─────────────────────────────
+    static void sleep(int ms) { try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
+    static String nowTime() { return LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")); }
+
+    static void executeAptSimulation() {
+        simRunning = true;
+        String attackerIp = "10.0.0.77";
+        try {
+            // Stage 1: Recon (Port Scan)
+            simCurrentStage = "1. RECONNAISSANCE (PORT SCAN)";
+            ingest("Sep 10 " + nowTime() + " edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=" + attackerIp + " dst=192.168.1.1 proto=TCP dpt=22 flags=SYN");
+            sleep(1400);
+
+            if (!simRunning) return;
+
+            // Stage 2: Credential Access (Brute Force)
+            simCurrentStage = "2. CREDENTIAL ACCESS (BRUTE FORCE)";
+            for (int i = 1; i <= 3 && simRunning; i++) {
+                ingest("Sep 10 " + nowTime() + " auth-gw sshd[401" + i + "]: Failed password for invalid user admin from " + attackerIp + " port " + (41200 + i) + " ssh2");
+                sleep(1200);
+            }
+
+            if (!simRunning) return;
+
+            // Stage 3: Privilege Escalation (Sudo root)
+            simCurrentStage = "3. PRIVILEGE ESCALATION (VALID ACCOUNTS)";
+            ingest("Sep 10 " + nowTime() + " target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=" + attackerIp);
+            sleep(1500);
+
+            if (!simRunning) return;
+
+            // Stage 4: Exfiltration (C2 Dump)
+            simCurrentStage = "4. EXFILTRATION (OVER C2)";
+            ingest("Sep 10 " + nowTime() + " edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=" + attackerIp + " dst=203.0.113.88 category=DATA_EXFIL bytes=52428800");
+
+            // Auto-seal the incident batch to demonstrate immediate tamper protection
+            sleep(1000);
+            anchorBatch();
+            simCurrentStage = "ATTACK CHAIN COMPLETE & ANCHORED";
+
+        } finally {
+            simRunning = false;
+        }
     }
 
     // ── Crypto & JSON Utilities ──────────────────────────────────────────────
@@ -628,7 +716,6 @@ public class Main {
         }
     }
 
-    // ── Provenance Graph API (Phase 3) ───────────────────────────────────────
     static class ApiProvenanceGraphHandler implements HttpHandler {
         public void handle(HttpExchange ex) throws IOException {
             if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) return;
@@ -641,11 +728,9 @@ public class Main {
                 snapshot = new ArrayList<>(allIngestedEvents);
             }
 
-            // Window: last 40 events
             int startIdx = Math.max(0, snapshot.size() - 40);
             List<Event> workingSet = snapshot.subList(startIdx, snapshot.size());
 
-            // Build Nodes
             for (Event e : workingSet) {
                 Map<String, Object> n = new LinkedHashMap<>();
                 n.put("id", e.id);
@@ -660,22 +745,19 @@ public class Main {
                 nodes.add(n);
             }
 
-            // Build Causal Edges (Heuristic Triple-Key & Kill-Chain Order Rule)
             for (int i = 0; i < workingSet.size(); i++) {
                 Event a = workingSet.get(i);
                 for (int j = i + 1; j < workingSet.size(); j++) {
                     Event b = workingSet.get(j);
 
-                    // Must share source IP
                     if (!a.sourceIp.equals("UNKNOWN_SRC") && a.sourceIp.equals(b.sourceIp)) {
                         long deltaMs = b.ts - a.ts;
-                        if (deltaMs >= 0 && deltaMs <= 600_000) { // Within 10 minutes
+                        if (deltaMs >= 0 && deltaMs <= 600_000) {
                             String confidence;
-                            // Check if plausible kill-chain progression (stage A <= stage B)
                             if (a.killChainStage > 0 && b.killChainStage > 0 && a.killChainStage <= b.killChainStage) {
                                 confidence = "HIGH (Kill-Chain Verified)";
                             } else if (a.killChainStage > b.killChainStage) {
-                                continue; // Reject reverse causal linkage
+                                continue;
                             } else {
                                 confidence = "MEDIUM (IP-Time Coincident)";
                             }
@@ -702,7 +784,6 @@ public class Main {
         }
     }
 
-    // ── Evidence Bundle Export API (Phase 3) ─────────────────────────────────
     static class ApiEvidenceBundleHandler implements HttpHandler {
         public void handle(HttpExchange ex) throws IOException {
             if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) return;
@@ -713,7 +794,6 @@ public class Main {
             bundle.put("chainTip", prevChainedRoot);
             bundle.put("totalBatchesAnchored", batches.size());
 
-            // Compile all nodes with their individual Merkle proof paths
             List<Map<String, Object>> verifiedNodes = new ArrayList<>();
             synchronized (allIngestedEvents) {
                 for (Event e : allIngestedEvents) {
@@ -724,7 +804,6 @@ public class Main {
                     nodeEntry.put("sourceIp", e.sourceIp);
                     nodeEntry.put("mitreClassification", e.mitreId + " - " + e.mitreTechnique + " (" + e.mitreTacticName + ")");
 
-                    // Include live cryptographic proof
                     Map<String, Object> proof = computeVerification(e.leafHash, -1);
                     nodeEntry.put("cryptographicProof", proof);
                     verifiedNodes.add(nodeEntry);
@@ -740,6 +819,34 @@ public class Main {
         }
     }
 
+    // ── Simulate Attack API (Phase 4) ────────────────────────────────────────
+    static class ApiSimulateAttackHandler implements HttpHandler {
+        public void handle(HttpExchange ex) throws IOException {
+            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) return;
+            String body = bodyOf(ex);
+            String action = extractJsonString(body, "action");
+
+            if ("stop".equalsIgnoreCase(action)) {
+                simRunning = false;
+                simCurrentStage = "STOPPED";
+                sendJson(ex, "{\"status\":\"stopped\"}");
+                return;
+            }
+
+            if (simRunning) {
+                sendJson(ex, "{\"status\":\"running\",\"stage\":\"" + ej(simCurrentStage) + "\"}");
+                return;
+            }
+
+            Thread t = new Thread(Main::executeAptSimulation);
+            t.setDaemon(true);
+            t.setName("APT-Simulation-Runner");
+            t.start();
+
+            sendJson(ex, "{\"status\":\"started\",\"stage\":\"" + ej(simCurrentStage) + "\"}");
+        }
+    }
+
     static class ApiAnchorHandler implements HttpHandler {
         public void handle(HttpExchange ex) throws IOException {
             if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) return;
@@ -751,7 +858,18 @@ public class Main {
 
     static class ApiStatusHandler implements HttpHandler {
         public void handle(HttpExchange ex) throws IOException {
-            sendJson(ex, "{\"totalIngested\":" + totalIngested + ",\"pendingInBatch\":" + pendingBuffer.size() + ",\"batchesAnchored\":" + batches.size() + ",\"chainTip\":\"" + prevChainedRoot + "\"}");
+            Map<String, Object> st = new LinkedHashMap<>();
+            st.put("totalIngested", totalIngested);
+            st.put("pendingInBatch", pendingBuffer.size());
+            st.put("batchesAnchored", batches.size());
+            st.put("chainTip", prevChainedRoot);
+            st.put("threatScore", calculateThreatScore());
+            st.put("integrityChecksPassed", integrityChecksPassed);
+            st.put("uniqueFormatsCount", detectedFormats.size());
+            st.put("techniquesCount", mitreTechniqueCounts.size());
+            st.put("simRunning", simRunning);
+            st.put("simStage", simCurrentStage);
+            sendJson(ex, mapToJson(st));
         }
     }
 
@@ -759,6 +877,8 @@ public class Main {
     public static void main(String[] args) throws IOException {
         loadLedger();
 
+        // Bounded thread pool sized to CPU cores to prevent resource thrashing under load
+        int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
         server.createContext("/",                     new StaticFileHandler());
         server.createContext("/api/parse",            new ApiParseHandler());
@@ -768,15 +888,17 @@ public class Main {
         server.createContext("/api/logs-by-technique",new ApiLogsByTechniqueHandler());
         server.createContext("/api/provenance-graph", new ApiProvenanceGraphHandler());
         server.createContext("/api/evidence-bundle",  new ApiEvidenceBundleHandler());
+        server.createContext("/api/simulate-attack",  new ApiSimulateAttackHandler());
         server.createContext("/api/anchor",           new ApiAnchorHandler());
         server.createContext("/api/status",           new ApiStatusHandler());
-        server.setExecutor(Executors.newCachedThreadPool());
+
+        server.setExecutor(Executors.newFixedThreadPool(poolSize));
         server.start();
 
         System.out.println("==========================================================");
-        System.out.println("[OK] LogAnchor-X Backend (Phase 3) Live at http://localhost:" + PORT);
-        System.out.println("[OK] Provenance Graph API : http://localhost:" + PORT + "/api/provenance-graph");
-        System.out.println("[OK] Evidence Bundle API  : http://localhost:" + PORT + "/api/evidence-bundle");
+        System.out.println("[OK] LogAnchor-X Full Platform (Phase 4) Live at http://localhost:" + PORT);
+        System.out.println("[OK] APT Simulation API : http://localhost:" + PORT + "/api/simulate-attack");
+        System.out.println("[OK] Bounded Thread Pool: " + poolSize + " workers | Air-Gap Ready");
         System.out.println("==========================================================");
     }
 }
