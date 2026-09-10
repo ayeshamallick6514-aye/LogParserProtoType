@@ -3,366 +3,480 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>LogAnchor-X — Live Provenance Graph &amp; SOC Dashboard (Phase 3)</title>
-    <!-- Lightweight D3.js (via CDN) with offline fallback safety -->
+    <title>LogAnchor-X | Cryptographic Ingestion &amp; Provenance Substrate</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <style>
         :root {
-          --bg: #0a0e14;
-          --surface: #0f141c;
-          --surface-2: #161d28;
-          --border: #1e293b;
-          --cyan: #00f0ff;
-          --green: #39ff88;
-          --red: #ff3366;
-          --amber: #ffaa00;
-          --purple: #b388ff;
-          --text: #e2e8f0;
-          --muted: #64748b;
-          --mono: "JetBrains Mono", Consolas, monospace;
-          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          --bg: #080b0f;
+          --panel: #0d1117;
+          --panel-header: #161b22;
+          --border: #30363d;
+          --border-subtle: #21262d;
+          --text: #c9d1d9;
+          --text-muted: #8b949e;
+          --text-bright: #f0f6fc;
+          --accent: #58a6ff;
+          --green: #3fb950;
+          --red: #f85149;
+          --amber: #d29922;
+          --purple: #bc8cff;
+          --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
           font-family: var(--sans);
           background: var(--bg);
           color: var(--text);
+          font-size: 12px;
+          line-height: 1.4;
           min-height: 100vh;
           display: flex;
           flex-direction: column;
+          -webkit-font-smoothing: antialiased;
         }
-        header {
-          background: var(--surface);
-          border-bottom: 1px solid var(--border);
-          padding: 10px 24px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          position: sticky;
-          top: 0;
-          z-index: 20;
-        }
-        .brand { display: flex; align-items: center; gap: 10px; }
-        .brand-icon {
-          font-size: 20px;
-          background: linear-gradient(135deg, var(--cyan), #0077ff);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          font-weight: 800;
-        }
-        .brand-title { font-size: 16px; font-weight: 700; letter-spacing: 0.05em; }
-        .badge {
-          font-size: 11px;
-          font-family: var(--mono);
-          padding: 3px 8px;
-          border-radius: 4px;
-          border: 1px solid var(--border);
-          color: var(--muted);
-        }
-        .badge.active { border-color: rgba(57,255,136,0.3); color: var(--green); background: rgba(57,255,136,0.05); }
 
+        /* Top Utility Header */
+        header {
+          background: var(--panel);
+          border-bottom: 1px solid var(--border);
+          padding: 0 16px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .brand-section {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .system-title {
+          font-family: var(--mono);
+          font-weight: 700;
+          font-size: 13px;
+          color: var(--text-bright);
+          letter-spacing: -0.02em;
+        }
+        .deployment-badge {
+          font-family: var(--mono);
+          font-size: 10px;
+          padding: 2px 6px;
+          background: rgba(88,166,255,0.1);
+          border: 1px solid rgba(88,166,255,0.25);
+          color: var(--accent);
+          border-radius: 2px;
+        }
+
+        .top-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        /* Telemetry KPI Strip */
+        .kpi-strip {
+          background: var(--panel-header);
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          height: 32px;
+          padding: 0 16px;
+          align-items: center;
+          font-family: var(--mono);
+          font-size: 11px;
+          gap: 24px;
+          color: var(--text-muted);
+        }
+        .kpi-metric { display: flex; gap: 6px; align-items: center; }
+        .kpi-num { color: var(--text-bright); font-weight: 600; }
+        .kpi-num.alert { color: var(--red); }
+        .kpi-num.ok { color: var(--green); }
+
+        /* Main Console Workspace */
         main {
           flex: 1;
-          max-width: 1550px;
+          padding: 12px 16px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          max-width: 1600px;
           width: 100%;
           margin: 0 auto;
-          padding: 16px 24px 40px;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
         }
 
-        .grid-top {
+        .grid-workbench {
           display: grid;
-          grid-template-columns: 360px 1fr 380px;
-          gap: 16px;
-          align-items: stretch;
+          grid-template-columns: 340px 1fr 380px;
+          gap: 12px;
+          height: 480px;
         }
-        @media (max-width: 1250px) { .grid-top { grid-template-columns: 1fr; } }
+        @media (max-width: 1200px) { .grid-workbench { grid-template-columns: 1fr; height: auto; } }
 
-        .card {
-          background: var(--surface);
+        /* Industrial Panel Cards */
+        .panel {
+          background: var(--panel);
           border: 1px solid var(--border);
-          border-radius: 8px;
-          padding: 14px;
+          border-radius: 3px;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          overflow: hidden;
         }
-        .card-title {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--muted);
+        .panel-header {
+          background: var(--panel-header);
+          border-bottom: 1px solid var(--border);
+          padding: 7px 12px;
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
+          font-family: var(--mono);
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-bright);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .panel-body {
+          padding: 10px;
+          flex: 1;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
         }
 
+        /* Controls & Inputs */
         textarea {
           width: 100%;
-          height: 70px;
+          height: 64px;
           background: var(--bg);
           border: 1px solid var(--border);
-          border-radius: 6px;
+          border-radius: 2px;
           color: var(--text);
           font-family: var(--mono);
           font-size: 11px;
-          padding: 8px;
-          resize: vertical;
+          padding: 6px 8px;
+          resize: none;
         }
-        textarea:focus { outline: none; border-color: var(--cyan); }
+        textarea:focus { outline: none; border-color: var(--accent); }
 
-        .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
         button {
-          padding: 6px 12px;
+          font-family: var(--sans);
           font-size: 11px;
-          font-weight: 600;
-          border-radius: 4px;
-          border: none;
+          font-weight: 500;
+          padding: 4px 10px;
+          border-radius: 3px;
+          border: 1px solid var(--border);
+          background: var(--panel-header);
+          color: var(--text);
           cursor: pointer;
           display: inline-flex;
           align-items: center;
           gap: 5px;
-          transition: opacity 0.15s;
+          transition: background 0.1s, border-color 0.1s;
         }
-        button:hover { opacity: 0.85; }
-        .btn-cyan { background: var(--cyan); color: #000; }
-        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-        .btn-outline:hover { border-color: var(--cyan); color: var(--cyan); }
-        .btn-red { background: rgba(255,51,102,0.15); border: 1px solid var(--red); color: var(--red); }
-        .btn-red:hover { background: var(--red); color: #fff; }
+        button:hover {
+          background: #21262d;
+          border-color: #8b949e;
+          color: var(--text-bright);
+        }
+        .btn-primary {
+          background: #238636;
+          border-color: rgba(240,246,252,0.1);
+          color: #fff;
+        }
+        .btn-primary:hover { background: #2ea043; border-color: rgba(240,246,252,0.1); }
+        .btn-danger {
+          background: rgba(248,81,73,0.1);
+          border-color: rgba(248,81,73,0.4);
+          color: var(--red);
+        }
+        .btn-danger:hover { background: var(--red); color: #fff; }
 
-        .kv { display: flex; flex-direction: column; gap: 3px; }
-        .kv-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-        .kv-val {
+        /* Metadata Key-Value Tables */
+        .meta-table {
+          width: 100%;
+          border-collapse: collapse;
           font-family: var(--mono);
           font-size: 11px;
-          background: var(--surface-2);
-          border: 1px solid var(--border);
-          border-radius: 4px;
-          padding: 6px 8px;
+        }
+        .meta-table td {
+          padding: 4px 6px;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+        .meta-table td.key {
+          color: var(--text-muted);
+          width: 110px;
+          text-transform: uppercase;
+          font-size: 10px;
+        }
+        .meta-table td.val {
+          color: var(--text);
           word-break: break-all;
         }
-        .kv-val.highlight { color: var(--cyan); }
 
-        /* D3 Provenance Graph Center Container */
-        #graphContainer {
-          width: 100%;
-          height: 380px;
-          background: #06090e;
+        /* Risk Score Gauge */
+        .risk-banner {
+          background: var(--bg);
           border: 1px solid var(--border);
-          border-radius: 6px;
+          border-radius: 2px;
+          padding: 8px 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .risk-val {
+          font-family: var(--mono);
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--accent);
+        }
+        .risk-val.alert { color: var(--red); }
+        .risk-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+
+        /* Provenance Graph View */
+        #graphView {
+          width: 100%;
+          height: 100%;
+          background: #05070a;
           position: relative;
-          overflow: hidden;
         }
         .graph-legend {
           position: absolute;
-          top: 10px;
-          left: 10px;
+          top: 8px;
+          left: 8px;
+          background: rgba(13,17,23,0.9);
+          border: 1px solid var(--border);
+          padding: 6px 10px;
+          border-radius: 2px;
+          font-family: var(--mono);
+          font-size: 10px;
           display: flex;
           flex-direction: column;
           gap: 4px;
-          font-size: 10px;
-          font-family: var(--mono);
-          background: rgba(15,20,28,0.85);
-          padding: 6px 10px;
-          border-radius: 4px;
-          border: 1px solid var(--border);
           pointer-events: none;
         }
-        .legend-item { display: flex; align-items: center; gap: 6px; }
-        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .legend-row { display: flex; align-items: center; gap: 6px; }
+        .legend-box { width: 8px; height: 8px; border-radius: 1px; }
 
-        /* Node & Edge Styles */
-        .node-circle {
-          cursor: pointer;
-          stroke-width: 2px;
-          transition: r 0.2s;
-        }
-        .node-circle:hover { r: 12px; }
-        .node-label {
-          font-family: var(--mono);
-          font-size: 9px;
-          fill: var(--text);
-          pointer-events: none;
-          text-shadow: 0 0 3px #000;
-        }
-        .edge-line {
-          stroke-dasharray: 4, 3;
-          animation: flow 1s linear infinite;
-        }
-        @keyframes flow {
-          from { stroke-dashoffset: 7; }
-          to { stroke-dashoffset: 0; }
-        }
+        /* D3 SVG Elements */
+        .d3-node { cursor: pointer; stroke-width: 1.5px; }
+        .d3-label { font-family: var(--mono); font-size: 9px; fill: var(--text-bright); pointer-events: none; }
+        .d3-edge { stroke: #30363d; stroke-dasharray: 4, 3; }
+        .d3-edge.verified { stroke: #58a6ff; stroke-width: 1.8px; }
 
-        /* Side drawer / modal detail */
-        .node-detail-panel {
-          background: var(--surface-2);
+        /* Verification Status Banner */
+        .verify-box {
           border: 1px solid var(--border);
-          border-radius: 6px;
-          padding: 10px;
-          font-size: 11px;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        /* Verification status boxes */
-        .status-box {
           padding: 8px 10px;
-          border-radius: 4px;
-          font-size: 11px;
-          line-height: 1.4;
+          border-radius: 2px;
           font-family: var(--mono);
-        }
-        .status-box.ok { background: rgba(57,255,136,0.1); border: 1px solid var(--green); color: var(--green); }
-        .status-box.err { background: rgba(255,51,102,0.1); border: 1px solid var(--red); color: var(--red); }
-
-        /* MITRE Matrix */
-        .matrix-wrapper { overflow-x: auto; padding-bottom: 6px; }
-        .matrix-grid { display: flex; gap: 8px; min-width: 1400px; }
-        .tactic-col {
-          flex: 1;
-          min-width: 85px;
-          background: var(--surface-2);
-          border: 1px solid var(--border);
-          border-radius: 4px;
-          overflow: hidden;
+          font-size: 11px;
           display: flex;
           flex-direction: column;
+          gap: 4px;
         }
-        .tactic-header { background: #1a2230; padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: center; }
-        .tactic-id { font-size: 8px; font-family: var(--mono); color: var(--cyan); font-weight: 700; }
-        .tactic-title { font-size: 9px; font-weight: 600; color: var(--text); line-height: 1.2; margin-top: 1px; }
-        .technique-list { padding: 4px; display: flex; flex-direction: column; gap: 4px; }
-        .tech-cell {
-          background: var(--surface);
+        .verify-box.ok { background: rgba(63,185,80,0.08); border-color: var(--green); color: var(--green); }
+        .verify-box.fail { background: rgba(248,81,73,0.08); border-color: var(--red); color: var(--red); }
+
+        /* MITRE ATT&CK Matrix Industrial Grid */
+        .matrix-scroll {
+          overflow-x: auto;
+          background: var(--panel);
           border: 1px solid var(--border);
           border-radius: 3px;
-          padding: 4px 6px;
-          cursor: pointer;
+        }
+        .matrix-flex {
+          display: flex;
+          min-width: 1400px;
+          border-left: 1px solid var(--border-subtle);
+        }
+        .matrix-col {
+          flex: 1;
+          min-width: 95px;
+          border-right: 1px solid var(--border-subtle);
+          display: flex;
+          flex-direction: column;
+        }
+        .matrix-col-header {
+          background: var(--panel-header);
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--border);
+          text-align: left;
+        }
+        .tactic-tag { font-family: var(--mono); font-size: 9px; color: var(--accent); }
+        .tactic-name { font-size: 10px; font-weight: 600; color: var(--text-bright); }
+
+        .tech-item {
+          padding: 6px 8px;
+          border-bottom: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
           gap: 2px;
+          background: var(--panel);
         }
-        .tech-cell.active { border-color: var(--red); background: rgba(255,51,102,0.1); }
-        .tech-top { display: flex; justify-content: space-between; font-size: 8px; font-family: var(--mono); }
-        .tech-badge { background: var(--border); padding: 1px 4px; border-radius: 2px; }
-        .tech-cell.active .tech-badge { background: var(--red); color: #fff; }
-        .tech-name { font-size: 9px; color: var(--text); line-height: 1.1; }
+        .tech-item.hit {
+          background: rgba(248,81,73,0.1);
+          border-left: 2px solid var(--red);
+        }
+        .tech-code-row {
+          display: flex;
+          justify-content: space-between;
+          font-family: var(--mono);
+          font-size: 9px;
+          color: var(--text-muted);
+        }
+        .tech-badge-num {
+          background: var(--border);
+          color: var(--text);
+          padding: 0 4px;
+          border-radius: 2px;
+        }
+        .tech-item.hit .tech-badge-num {
+          background: var(--red);
+          color: #fff;
+        }
+        .tech-label-name { font-size: 10px; color: var(--text); line-height: 1.2; }
     </style>
 </head>
 <body>
 
 <header>
-    <div class="brand">
-        <span class="brand-icon">&#x2693;</span>
-        <span class="brand-title">LogAnchor-X</span>
-        <span class="badge">Phase 3: Live Provenance Graph &amp; Forensic Evidence Export</span>
+    <div class="brand-section">
+        <span class="system-title">LOGANCHOR-X</span>
+        <span class="deployment-badge">AIR-GAP DEFENSE SUBSTRATE</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">NTRO PS-26156 &middot; Cryptographic Pre-Processing</span>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div class="top-actions">
+        <button class="btn-primary" id="btnSim" onclick="toggleSim()">Run Attack Sequence</button>
         <a href="/api/evidence-bundle" style="text-decoration:none;">
-            <button class="btn-cyan">&#x1F4E6; Download Evidence Bundle</button>
+            <button>Export Evidence Bundle</button>
         </a>
-        <span class="badge active">&#x25CF; Engine Active</span>
-        <span class="badge" id="batchCountBadge">Batches: 0</span>
+        <button onclick="resetConsole()">Reset State</button>
     </div>
 </header>
 
+<!-- Industrial KPI Strip -->
+<div class="kpi-strip">
+    <div class="kpi-metric"><span>Ingested Events:</span><span class="kpi-num" id="kpiIngested">0</span></div>
+    <div class="kpi-metric"><span>Sealed Batches:</span><span class="kpi-num" id="kpiBatches">0</span></div>
+    <div class="kpi-metric"><span>Adapters Active:</span><span class="kpi-num" id="kpiFormats">0/6</span></div>
+    <div class="kpi-metric"><span>ATT&amp;CK Detections:</span><span class="kpi-num alert" id="kpiMitre">0</span></div>
+    <div class="kpi-metric"><span>Integrity Validations:</span><span class="kpi-num ok" id="kpiChecks">0</span></div>
+    <div class="kpi-metric" style="margin-left:auto;">
+        <span>Simulation Phase:</span>
+        <span class="kpi-num" id="kpiStage" style="color:var(--amber);">IDLE</span>
+    </div>
+</div>
+
 <main>
-    <!-- Top 3-Column Layout: Left Ingest | Center D3 Graph | Right Node Detail & Tamper -->
-    <div class="grid-top">
+    <!-- Workbench Grid -->
+    <div class="grid-workbench">
 
-        <!-- Column 1: Ingest & Quick Vectors -->
-        <div class="card">
-            <div class="card-title">
-                <span>1. Ingest Log Stream</span>
-                <span style="font-size:9px;color:var(--muted)">Triple-Key Indexed</span>
+        <!-- Column 1: Ingestion & Parsing Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Ingestion Pipeline</span>
+                <span style="color:var(--text-muted);font-weight:normal;">T=0 Raw Leaf Hashing</span>
             </div>
-
-            <div class="btn-group">
-                <button class="btn-outline" onclick="loadSample('scan')">1. Recon (Port Scan)</button>
-                <button class="btn-outline" onclick="loadSample('ssh')">2. Credential (SSH)</button>
-                <button class="btn-outline" onclick="loadSample('priv')">3. PrivEsc (Sudo)</button>
-                <button class="btn-outline" onclick="loadSample('exfil')">4. Exfil (50MB Dump)</button>
-            </div>
-
-            <textarea id="rawLog" placeholder="Paste a raw log string here..."></textarea>
-
-            <div class="btn-group">
-                <button class="btn-cyan" onclick="parseLog()">&#x26A1; Ingest &amp; Update Graph</button>
-                <button class="btn-outline" onclick="forceAnchor()">&#x1F512; Seal Batch</button>
-            </div>
-
-            <div class="kv">
-                <div class="kv-label">SHA-256 Leaf Hash (T=0 Invariant)</div>
-                <div class="kv-val highlight" id="leafHashVal">&#8212;</div>
-            </div>
-
-            <div class="kv">
-                <div class="kv-label">Heuristic Correlation Note</div>
-                <div style="font-size:10px;color:var(--muted);line-height:1.4;">
-                    *Edges are rule-based causal links capped by confidence tiers: High (Kill-Chain Verified) vs Medium (Coincident).
+            <div class="panel-body">
+                <div class="risk-banner">
+                    <div>
+                        <div class="risk-label">Correlation Risk Score</div>
+                        <div style="font-size:10px;color:var(--text-muted);">Adjacent Kill-Chain Composite</div>
+                    </div>
+                    <div class="risk-val" id="riskScoreVal">0</div>
                 </div>
+
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button onclick="setSample('scan')">PortScan</button>
+                    <button onclick="setSample('ssh')">SSH Brute</button>
+                    <button onclick="setSample('priv')">Sudo Root</button>
+                    <button onclick="setSample('exfil')">Exfiltration</button>
+                </div>
+
+                <textarea id="logInput" placeholder="Raw telemetric string payload..."></textarea>
+
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-primary" onclick="ingestManual()" style="flex:1;">Ingest &amp; Anchor</button>
+                    <button onclick="sealManual()">Seal Batch</button>
+                </div>
+
+                <table class="meta-table" style="margin-top:4px;">
+                    <tr>
+                        <td class="key">Leaf Digest</td>
+                        <td class="val" id="dispLeafHash" style="color:var(--accent);">—</td>
+                    </tr>
+                    <tr>
+                        <td class="key">Drain Pattern</td>
+                        <td class="val" id="dispTemplate" style="font-size:10px;">—</td>
+                    </tr>
+                    <tr>
+                        <td class="key">ATT&amp;CK Tactic</td>
+                        <td class="val" id="dispMitre">—</td>
+                    </tr>
+                </table>
             </div>
         </div>
 
-        <!-- Column 2: Center D3 Force-Directed Provenance Graph -->
-        <div class="card">
-            <div class="card-title">
-                <span>2. Live Attack Provenance Graph (D3 Force Simulation)</span>
-                <button class="btn-outline" onclick="loadProvenanceGraph()" style="padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
+        <!-- Column 2: Center Provenance Graph (D3.js) -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Causal Provenance Topology</span>
+                <button onclick="manualRefresh()" style="padding:2px 6px;font-size:10px;">Refresh Topology</button>
             </div>
-
-            <div id="graphContainer">
+            <div id="graphView">
                 <div class="graph-legend">
-                    <div class="legend-item"><div class="legend-dot" style="background:var(--cyan);"></div><span>Reconnaissance</span></div>
-                    <div class="legend-item"><div class="legend-dot" style="background:var(--amber);"></div><span>Credential Access</span></div>
-                    <div class="legend-item"><div class="legend-dot" style="background:var(--purple);"></div><span>Privilege Escalation</span></div>
-                    <div class="legend-item"><div class="legend-dot" style="background:var(--red);"></div><span>Exfiltration</span></div>
+                    <div class="legend-row"><div class="legend-box" style="background:#58a6ff;"></div><span>Reconnaissance (T1046)</span></div>
+                    <div class="legend-row"><div class="legend-box" style="background:#d29922;"></div><span>Credential Access (T1110)</span></div>
+                    <div class="legend-row"><div class="legend-box" style="background:#bc8cff;"></div><span>Privilege Escalation (T1078)</span></div>
+                    <div class="legend-row"><div class="legend-box" style="background:#f85149;"></div><span>Data Exfiltration (T1041)</span></div>
                 </div>
-                <svg id="graphSvg" width="100%" height="100%"></svg>
+                <svg id="svgGraph" width="100%" height="100%"></svg>
             </div>
         </div>
 
-        <!-- Column 3: Selected Node Inspector & Merkle Verification -->
-        <div class="card">
-            <div class="card-title">
-                <span>3. Selected Node &amp; Cryptographic Proof</span>
+        <!-- Column 3: Cryptographic Verification & Tamper Detection -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Cryptographic Verification</span>
+                <span style="color:var(--text-muted);font-weight:normal;">Merkle Sibling Path</span>
             </div>
+            <div class="panel-body">
+                <div id="dispEventMeta" style="border:1px solid var(--border);padding:8px;border-radius:2px;background:var(--bg);font-family:var(--mono);font-size:11px;">
+                    <div style="color:var(--text-muted);text-align:center;">Select any node in the topology to inspect payload and audit proofs.</div>
+                </div>
 
-            <div id="nodeDetail" class="node-detail-panel">
-                <div style="color:var(--muted);text-align:center;padding:12px 0;">Click any node in the provenance graph to inspect payload and verify Merkle proof.</div>
-            </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn-primary" onclick="verifyActive()" style="flex:1;">Verify Merkle Proof</button>
+                    <button class="btn-danger" onclick="tamperActive()" style="flex:1;">Simulate Scratch Tamper</button>
+                </div>
 
-            <div class="btn-group">
-                <button class="btn-cyan" onclick="verifyActiveLeaf()">&#x1F50E; Verify Stored Leaf</button>
-                <button class="btn-red" onclick="simulateTamper()">&#x26A0; Tamper Scratch Leaf</button>
-            </div>
+                <div id="verifyOutcome" class="verify-box" style="display:none;"></div>
 
-            <div id="statusBox" class="status-box" style="display:none;"></div>
-
-            <div class="kv">
-                <div class="kv-label">Recomputed vs. Anchored Root</div>
-                <div class="kv-val" id="rootsComparison">&#8212;</div>
+                <table class="meta-table" style="margin-top:6px;">
+                    <tr>
+                        <td class="key">Recomputed Root</td>
+                        <td class="val" id="dispRecomputedRoot">—</td>
+                    </tr>
+                    <tr>
+                        <td class="key">Anchored Root</td>
+                        <td class="val" id="dispAnchoredRoot" style="color:var(--accent);">—</td>
+                    </tr>
+                </table>
             </div>
         </div>
 
     </div>
 
-    <!-- Row 2: Complete 14-Tactic MITRE Matrix -->
-    <div class="card">
-        <div class="card-title">
-            <span>4. MITRE ATT&amp;CK&reg; Heatmap Matrix (14 Tactics)</span>
-            <span style="font-size:10px;color:var(--muted)">Rule-based heuristic tags</span>
+    <!-- Row 2: Complete 14-Tactic ATT&CK Matrix Navigator -->
+    <div class="panel">
+        <div class="panel-header">
+            <span>MITRE ATT&amp;CK&reg; Enterprise Navigator (14 Tactics)</span>
+            <span style="color:var(--text-muted);font-weight:normal;">Offline Rule Classifier &middot; Dynamic Technique Counting</span>
         </div>
-
-        <div class="matrix-wrapper">
-            <div class="matrix-grid" id="matrixGrid">
-                <div style="font-size:11px;color:var(--muted);padding:8px;">Loading MITRE Matrix...</div>
+        <div class="matrix-scroll">
+            <div class="matrix-flex" id="matrixContainer">
+                <div style="padding:12px;font-family:var(--mono);color:var(--text-muted);">Loading ATT&CK Matrix...</div>
             </div>
         </div>
     </div>
@@ -370,23 +484,20 @@
 
 <script>
     var SAMPLES = {
-      scan: "CEF:0|NetSec|FW|1.0|100|PORT_SCAN|Low|src=10.0.0.5 dst=192.168.1.1 proto=TCP dpt=22",
-      ssh:  "Sep 09 15:30:01 auth-gateway sshd[5120]: Failed password for invalid user root from 10.0.0.5 port 42102 ssh2",
-      priv: "Sep 09 15:32:10 target-node sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.5",
-      exfil:"CEF:0|NetSec|FW|1.0|200|LARGE_TRANSFER|High|src=10.0.0.5 dst=203.0.113.42 bytes=52428800"
+      scan: "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN",
+      ssh:  "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2",
+      priv: "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77",
+      exfil:"Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800"
     };
 
     var activeLeaf = "";
-    var activeNode = null;
+    var simActive = false;
 
-    function loadSample(key) {
-      document.getElementById("rawLog").value = SAMPLES[key] || "";
-    }
+    function setSample(k) { document.getElementById("logInput").value = SAMPLES[k] || ""; }
 
-    function parseLog() {
-      var raw = document.getElementById("rawLog").value.trim();
+    function ingestManual() {
+      var raw = document.getElementById("logInput").value.trim();
       if (!raw) return;
-
       fetch("/api/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -395,140 +506,182 @@
       .then(r => r.json())
       .then(d => {
         activeLeaf = d.leafHash;
-        document.getElementById("leafHashVal").textContent = d.leafHash;
-        refreshStatus();
-        loadMitreMatrix();
-        loadProvenanceGraph();
+        document.getElementById("dispLeafHash").textContent = d.leafHash;
+        document.getElementById("dispTemplate").textContent = d.template;
+        document.getElementById("dispMitre").textContent = (d.mitreId || "UNCLASSIFIED") + " (" + (d.mitreTacticName || "None") + ")";
+        manualRefresh();
       });
     }
 
-    function forceAnchor() {
+    function sealManual() {
       fetch("/api/anchor", { method: "POST" })
         .then(r => r.json())
         .then(d => {
-          refreshStatus();
-          alert("Batch #" + d.batchId + " sealed with " + d.leavesAnchored + " leaves.");
+          manualRefresh();
+          alert("Batch " + d.batchId + " sealed (" + d.leavesAnchored + " leaves).");
         });
     }
 
-    // ── D3.js Force-Directed Graph Rendering ──────────────────────────────────
-    function loadProvenanceGraph() {
+    function resetConsole() {
+      if (!confirm("Reset runtime session state? Ledger remains committed.")) return;
+      fetch("/api/reset", { method: "POST" })
+        .then(() => {
+          activeLeaf = "";
+          document.getElementById("dispLeafHash").textContent = "—";
+          document.getElementById("dispTemplate").textContent = "—";
+          document.getElementById("dispMitre").textContent = "—";
+          document.getElementById("dispEventMeta").innerHTML = '<div style="color:var(--text-muted);text-align:center;">State cleared.</div>';
+          document.getElementById("verifyOutcome").style.display = "none";
+          document.getElementById("dispRecomputedRoot").textContent = "—";
+          document.getElementById("dispAnchoredRoot").textContent = "—";
+          manualRefresh();
+        });
+    }
+
+    function toggleSim() {
+      var btn = document.getElementById("btnSim");
+      var action = simActive ? "stop" : "start";
+      fetch("/api/simulate-attack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: action })
+      }).then(() => {
+        simActive = !simActive;
+        btn.textContent = simActive ? "Halt Sequence" : "Run Attack Sequence";
+        btn.className = simActive ? "btn-danger" : "btn-primary";
+      });
+    }
+
+    function manualRefresh() {
+      refreshStatus();
+      loadGraph();
+      loadMatrix();
+    }
+
+    function refreshStatus() {
+      fetch("/api/status")
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById("kpiIngested").textContent = (d.totalIngested || 0).toLocaleString();
+          document.getElementById("kpiBatches").textContent = d.batchesAnchored || 0;
+          document.getElementById("kpiFormats").textContent = (d.uniqueFormatsCount || 0) + "/6";
+          document.getElementById("kpiMitre").textContent = d.techniquesCount || 0;
+          document.getElementById("kpiChecks").textContent = d.integrityChecksPassed || 0;
+          document.getElementById("kpiStage").textContent = d.simStage || "IDLE";
+
+          var sc = d.threatScore || 0;
+          var rEl = document.getElementById("riskScoreVal");
+          rEl.textContent = sc + " / 100";
+          rEl.className = sc >= 75 ? "risk-val alert" : "risk-val";
+
+          var btn = document.getElementById("btnSim");
+          if (d.simRunning && !simActive) {
+            simActive = true;
+            btn.textContent = "Halt Sequence";
+            btn.className = "btn-danger";
+          } else if (!d.simRunning && simActive) {
+            simActive = false;
+            btn.textContent = "Run Attack Sequence";
+            btn.className = "btn-primary";
+          }
+        });
+    }
+
+    function loadGraph() {
       fetch("/api/provenance-graph")
         .then(r => r.json())
-        .then(graph => {
-          renderD3Graph(graph.nodes || [], graph.edges || []);
-        });
+        .then(d => renderTopology(d.nodes || [], d.edges || []));
     }
 
-    function renderD3Graph(nodes, edges) {
-      var svg = d3.select("#graphSvg");
+    function renderTopology(nodes, edges) {
+      var svg = d3.select("#svgGraph");
       svg.selectAll("*").remove();
 
-      var width = document.getElementById("graphContainer").clientWidth;
-      var height = document.getElementById("graphContainer").clientHeight;
+      var w = document.getElementById("graphView").clientWidth;
+      var h = document.getElementById("graphView").clientHeight;
 
       if (!nodes.length) {
         svg.append("text")
-          .attr("x", width / 2).attr("y", height / 2)
+          .attr("x", w / 2).attr("y", h / 2)
           .attr("text-anchor", "middle")
-          .attr("fill", "var(--muted)")
+          .attr("fill", "#8b949e")
+          .attr("font-family", "ui-monospace, monospace")
           .attr("font-size", "11px")
-          .attr("font-family", "var(--mono)")
-          .text("Ingest log vectors to generate live causal provenance graph.");
+          .text("Awaiting telemetry ingestion. Run sequence or submit payload.");
         return;
       }
 
       var colorMap = {
-        1: "var(--cyan)",    // Recon
-        2: "var(--cyan)",    // Initial
-        3: "var(--amber)",   // Credential
-        4: "var(--purple)",  // PrivEsc
-        5: "var(--purple)",  // Lateral
-        6: "var(--red)"      // Exfil
+        1: "#58a6ff", // Recon
+        2: "#58a6ff",
+        3: "#d29922", // Credential
+        4: "#bc8cff", // PrivEsc
+        5: "#bc8cff",
+        6: "#f85149"  // Exfil
       };
 
-      var simulation = d3.forceSimulation(nodes)
+      var sim = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(edges).id(d => d.id).distance(80))
-        .force("charge", d3.forceManyBody().strength(-150))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collision", d3.forceCollide().radius(25));
+        .force("charge", d3.forceManyBody().strength(-140))
+        .force("center", d3.forceCenter(w / 2, h / 2))
+        .force("collision", d3.forceCollide().radius(24));
 
-      // Draw Links
       var link = svg.append("g")
         .selectAll("line")
         .data(edges)
         .enter().append("line")
-        .attr("class", "edge-line")
-        .attr("stroke", d => d.confidence.includes("HIGH") ? "rgba(0,240,255,0.7)" : "rgba(100,116,139,0.4)")
-        .attr("stroke-width", d => d.confidence.includes("HIGH") ? 2 : 1);
+        .attr("class", d => d.confidence && d.confidence.includes("HIGH") ? "d3-edge verified" : "d3-edge");
 
-      // Draw Nodes
       var node = svg.append("g")
         .selectAll("circle")
         .data(nodes)
         .enter().append("circle")
-        .attr("class", "node-circle")
+        .attr("class", "d3-node")
         .attr("r", 9)
-        .attr("fill", d => colorMap[d.stage] || "var(--muted)")
-        .attr("stroke", "#fff")
+        .attr("fill", d => colorMap[d.stage] || "#8b949e")
+        .attr("stroke", "#080b0f")
         .on("click", (evt, d) => inspectNode(d));
 
-      // Draw Node Labels
-      var labels = svg.append("g")
+      var label = svg.append("g")
         .selectAll("text")
         .data(nodes)
         .enter().append("text")
-        .attr("class", "node-label")
-        .attr("dx", 12).attr("dy", 4)
+        .attr("class", "d3-label")
+        .attr("dx", 12).attr("dy", 3)
         .text(d => d.mitreId);
 
-      simulation.on("tick", () => {
+      sim.on("tick", () => {
         link
           .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
           .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-
         node
-          .attr("cx", d => Math.max(15, Math.min(width - 15, d.x)))
-          .attr("cy", d => Math.max(15, Math.min(height - 15, d.y)));
-
-        labels
-          .attr("x", d => Math.max(15, Math.min(width - 15, d.x)))
-          .attr("y", d => Math.max(15, Math.min(height - 15, d.y)));
+          .attr("cx", d => Math.max(14, Math.min(w - 14, d.x)))
+          .attr("cy", d => Math.max(14, Math.min(h - 14, d.y)));
+        label
+          .attr("x", d => Math.max(14, Math.min(w - 14, d.x)))
+          .attr("y", d => Math.max(14, Math.min(h - 14, d.y)));
       });
     }
 
-    function inspectNode(node) {
-      activeNode = node;
-      activeLeaf = node.leafHash;
-
-      document.getElementById("leafHashVal").textContent = node.leafHash;
-      document.getElementById("nodeDetail").innerHTML = `
-        <div><strong>Event ID:</strong> ${node.id}</div>
-        <div><strong>MITRE:</strong> <span style="color:var(--cyan)">${node.mitreId} - ${node.mitreTechnique}</span></div>
-        <div><strong>Tactic:</strong> ${node.tactic}</div>
-        <div><strong>Source:</strong> ${node.sourceIp}</div>
-        <div style="word-break:break-all;color:var(--muted);"><strong>Payload:</strong> ${node.raw}</div>
-        <div style="word-break:break-all;font-size:10px;color:var(--cyan)"><strong>Leaf Hash:</strong> ${node.leafHash}</div>
+    function inspectNode(n) {
+      activeLeaf = n.leafHash;
+      document.getElementById("dispLeafHash").textContent = n.leafHash;
+      document.getElementById("dispEventMeta").innerHTML = `
+        <div style="font-weight:600;color:var(--text-bright);">${n.id} &middot; ${n.mitreId} - ${n.mitreTechnique}</div>
+        <div style="color:var(--text-muted);margin:3px 0;">Host: ${n.sourceIp}:${n.destPort} &middot; Service: ${n.service}</div>
+        <div style="color:var(--text);word-break:break-all;margin-top:4px;">${n.raw}</div>
       `;
     }
 
-    function verifyActiveLeaf() {
-      if (!activeLeaf) {
-        alert("Select a node from the graph or ingest a log first.");
-        return;
-      }
-
+    function verifyActive() {
+      if (!activeLeaf) { alert("Select an event node first."); return; }
       fetch(`/api/verify?leafHash=${activeLeaf}`)
         .then(r => r.json())
         .then(d => renderVerification(d));
     }
 
-    function simulateTamper() {
-      if (!activeLeaf) {
-        alert("Select a node from the graph or ingest a log first.");
-        return;
-      }
-
+    function tamperActive() {
+      if (!activeLeaf) { alert("Select an event node first."); return; }
       fetch("/api/tamper-simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -539,59 +692,50 @@
     }
 
     function renderVerification(d) {
-      var box = document.getElementById("statusBox");
-      box.style.display = "block";
-      box.className = "status-box " + (d.valid ? "ok" : "err");
-      box.innerHTML = `
-        <strong>${d.valid ? "&#x2714; CRYPTOGRAPHIC PROOF VALIDATED" : "&#x26A0; " + d.message}</strong><br/>
-        <span>Batch #${d.batchId || "N/A"}</span>
+      var b = document.getElementById("verifyOutcome");
+      b.style.display = "flex";
+      b.className = "verify-box " + (d.valid ? "ok" : "fail");
+      b.innerHTML = `
+        <strong>${d.valid ? "PROFIT-INCLUSION PROOF VALID" : "INTEGRITY MISMATCH DETECTED"}</strong>
+        <div>${d.message} &middot; Batch: ${d.batchId || "UNCOMMITTED"}</div>
       `;
-
-      document.getElementById("rootsComparison").innerHTML = `
-        Recomputed: <span style="color:${d.valid ? 'var(--green)' : 'var(--red)'}">${d.recomputedRoot || "N/A"}</span><br/>
-        Anchored:   <span style="color:var(--cyan)">${d.anchoredRoot || "N/A"}</span>
-      `;
+      document.getElementById("dispRecomputedRoot").textContent = d.recomputedRoot || "N/A";
+      document.getElementById("dispAnchoredRoot").textContent = d.anchoredRoot || "N/A";
+      refreshStatus();
     }
 
-    function loadMitreMatrix() {
+    function loadMatrix() {
       fetch("/api/mitre-matrix")
         .then(r => r.json())
         .then(d => {
-          var grid = document.getElementById("matrixGrid");
-          grid.innerHTML = (d.tactics || []).map(tac => `
-            <div class="tactic-col">
-              <div class="tactic-header">
-                <div class="tactic-id">${tac.id}</div>
-                <div class="tactic-title">${tac.name}</div>
+          var c = document.getElementById("matrixContainer");
+          c.innerHTML = (d.tactics || []).map(tac => `
+            <div class="matrix-col">
+              <div class="matrix-col-header">
+                <div class="tactic-tag">${tac.id}</div>
+                <div class="tactic-name">${tac.name}</div>
               </div>
-              <div class="technique-list">
-                ${(tac.techniques || []).map(tech => `
-                  <div class="tech-cell ${tech.count > 0 ? 'active' : ''}">
-                    <div class="tech-top">
-                      <span>${tech.id}</span>
-                      <span class="tech-badge">${tech.count}</span>
-                    </div>
-                    <div class="tech-name">${tech.name}</div>
+              ${(tac.techniques || []).map(tech => `
+                <div class="tech-item ${tech.count > 0 ? 'hit' : ''}">
+                  <div class="tech-code-row">
+                    <span>${tech.id}</span>
+                    <span class="tech-badge-num">${tech.count}</span>
                   </div>
-                `).join("")}
-              </div>
+                  <div class="tech-label-name">${tech.name}</div>
+                </div>
+              `).join("")}
             </div>
           `).join("");
         });
     }
 
-    function refreshStatus() {
-      fetch("/api/status")
-        .then(r => r.json())
-        .then(d => {
-          document.getElementById("batchCountBadge").textContent = "Batches: " + d.batchesAnchored + " (Pending: " + d.pendingInBatch + "/64)";
-        });
-    }
+    setInterval(() => {
+      refreshStatus();
+      loadGraph();
+      loadMatrix();
+    }, 1800);
 
-    setInterval(refreshStatus, 3000);
-    refreshStatus();
-    loadMitreMatrix();
-    loadProvenanceGraph();
+    manualRefresh();
 </script>
 </body>
 </html>
