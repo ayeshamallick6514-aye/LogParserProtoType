@@ -424,6 +424,24 @@ public class Main {
         } catch (Exception e) { System.out.println("[!] Ledger recovery error: " + e.getMessage()); }
     }
 
+    static synchronized void resetState() {
+        pendingBuffer.clear();
+        synchronized (allIngestedEvents) { allIngestedEvents.clear(); }
+        ROOT_TREE.children.clear();
+        totalIngested = 0;
+        integrityChecksPassed = 0;
+        detectedFormats.clear();
+        mitreTechniqueCounts.clear();
+        batches.clear();
+        leafIndex.clear();
+        prevChainedRoot = "GENESIS";
+        batchCounter = 0;
+        simRunning = false;
+        simCurrentStage = "IDLE";
+        try { Files.deleteIfExists(LEDGER); }
+        catch (IOException e) { System.out.println("[!] Ledger reset failed: " + e.getMessage()); }
+    }
+
     // ── Automated APT Attack Simulator (Phase 4) ─────────────────────────────
     static void sleep(int ms) { try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
     static String nowTime() { return LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")); }
@@ -461,6 +479,7 @@ public class Main {
 
             // Auto-seal the incident batch to demonstrate immediate tamper protection
             sleep(1000);
+            if (!simRunning) return;
             anchorBatch();
             simCurrentStage = "ATTACK CHAIN COMPLETE & ANCHORED";
 
@@ -518,6 +537,7 @@ public class Main {
     static void sendJson(HttpExchange ex, String json) throws IOException {
         byte[] b = json.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.getResponseHeaders().set("Cache-Control", "no-store, no-cache, must-revalidate");
         ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         ex.sendResponseHeaders(200, b.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(b); }
@@ -856,6 +876,14 @@ public class Main {
         }
     }
 
+    static class ApiResetHandler implements HttpHandler {
+        public void handle(HttpExchange ex) throws IOException {
+            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) return;
+            resetState();
+            sendJson(ex, "{\"status\":\"reset\"}");
+        }
+    }
+
     static class ApiStatusHandler implements HttpHandler {
         public void handle(HttpExchange ex) throws IOException {
             Map<String, Object> st = new LinkedHashMap<>();
@@ -890,6 +918,7 @@ public class Main {
         server.createContext("/api/evidence-bundle",  new ApiEvidenceBundleHandler());
         server.createContext("/api/simulate-attack",  new ApiSimulateAttackHandler());
         server.createContext("/api/anchor",           new ApiAnchorHandler());
+        server.createContext("/api/reset",            new ApiResetHandler());
         server.createContext("/api/status",           new ApiStatusHandler());
 
         server.setExecutor(Executors.newFixedThreadPool(poolSize));

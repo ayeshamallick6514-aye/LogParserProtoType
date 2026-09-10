@@ -106,6 +106,7 @@
           justify-content: space-between;
           align-items: center;
         }
+        .graph-actions { display: flex; gap: 4px; }
 
         textarea {
           width: 100%;
@@ -395,7 +396,10 @@
         <div class="card">
             <div class="card-title">
                 <span>2. Live Attack Provenance Graph (D3 Force Engine)</span>
-                <button class="btn-outline" onclick="loadProvenanceGraph()" style="padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
+              <span class="graph-actions">
+                <button class="btn-outline" onclick="loadProvenanceGraph(true)" style="padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
+                <button class="btn-outline" onclick="clearProvenanceGraph()" style="padding:2px 8px;font-size:10px;">&#x2715; Clear</button>
+              </span>
             </div>
 
             <div id="graphContainer">
@@ -461,6 +465,9 @@
 
     var activeLeaf = "";
     var simIsActive = false;
+    var provenanceRequest = null;
+    var provenanceSimulation = null;
+    var provenanceGraphCleared = false;
 
     function loadSample(key) {
       document.getElementById("rawLog").value = SAMPLES[key] || "";
@@ -481,7 +488,7 @@
         document.getElementById("leafHashVal").textContent = d.leafHash;
         refreshStatus();
         loadMitreMatrix();
-        loadProvenanceGraph();
+        loadProvenanceGraph(true);
       });
     }
 
@@ -550,13 +557,63 @@
     }
 
     // ── D3.js Force-Directed Graph ────────────────────────────────────────────
-    function loadProvenanceGraph() {
-      fetch("/api/provenance-graph")
-        .then(r => r.json())
-        .then(graph => renderD3Graph(graph.nodes || [], graph.edges || []));
+    function loadProvenanceGraph(forceRefresh) {
+      if (provenanceGraphCleared && !forceRefresh) return;
+      provenanceGraphCleared = false;
+      if (provenanceRequest) provenanceRequest.abort();
+      var request = new AbortController();
+      provenanceRequest = request;
+
+      fetch("/api/provenance-graph?refresh=" + Date.now(), {
+        cache: "no-store",
+        signal: request.signal
+      })
+        .then(r => {
+          if (!r.ok) throw new Error("Provenance graph request failed");
+          return r.json();
+        })
+        .then(graph => renderD3Graph(graph.nodes || [], graph.edges || []))
+        .catch(error => {
+          if (error.name !== "AbortError") console.error(error);
+        })
+        .finally(() => {
+          if (provenanceRequest === request) provenanceRequest = null;
+        });
+    }
+
+    function clearProvenanceGraph() {
+      provenanceGraphCleared = true;
+      if (provenanceRequest) provenanceRequest.abort();
+      provenanceRequest = null;
+      if (provenanceSimulation) provenanceSimulation.stop();
+      provenanceSimulation = null;
+      d3.select("#graphSvg").selectAll("*").remove();
+      fetch("/api/reset", { method: "POST" })
+        .then(() => {
+          refreshStatus();
+          loadMitreMatrix();
+        });
+      activeLeaf = "";
+      document.getElementById("leafHashVal").textContent = "\u2014";
+      document.getElementById("nodeDetail").innerHTML = `
+        <div style="color:var(--muted);text-align:center;padding:12px 0;">
+          Click any node in the provenance graph to inspect payload and test Merkle proofs.
+        </div>
+      `;
+      document.getElementById("statusBox").style.display = "none";
+      document.getElementById("rootsComparison").textContent = "\u2014";
+      updateThreatGauge(0);
+      document.getElementById("statIngested").textContent = "0";
+      document.getElementById("statBatches").textContent = "0";
+      document.getElementById("statFormats").textContent = "0/6";
+      document.getElementById("statMitre").textContent = "0";
+      document.getElementById("statChecks").textContent = "0";
+      document.getElementById("statSimStage").textContent = "IDLE";
     }
 
     function renderD3Graph(nodes, edges) {
+      if (provenanceSimulation) provenanceSimulation.stop();
+
       var svg = d3.select("#graphSvg");
       svg.selectAll("*").remove();
 
@@ -583,7 +640,7 @@
         6: "var(--red)"      // Exfil
       };
 
-      var simulation = d3.forceSimulation(nodes)
+      provenanceSimulation = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(edges).id(d => d.id).distance(85))
         .force("charge", d3.forceManyBody().strength(-160))
         .force("center", d3.forceCenter(width / 2, height / 2))
@@ -615,7 +672,7 @@
         .attr("dx", 13).attr("dy", 4)
         .text(d => d.mitreId);
 
-      simulation.on("tick", () => {
+      provenanceSimulation.on("tick", () => {
         link
           .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
           .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
