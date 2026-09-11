@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8"/>
@@ -36,7 +36,6 @@
           -webkit-font-smoothing: antialiased;
         }
 
-        /* Top Utility Header */
         header {
           background: var(--panel);
           border-bottom: 1px solid var(--border);
@@ -46,18 +45,8 @@
           align-items: center;
           justify-content: space-between;
         }
-        .brand-section {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .system-title {
-          font-family: var(--mono);
-          font-weight: 700;
-          font-size: 13px;
-          color: var(--text-bright);
-          letter-spacing: -0.02em;
-        }
+        .brand-section { display: flex; align-items: center; gap: 12px; }
+        .system-title { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--text-bright); }
         .deployment-badge {
           font-family: var(--mono);
           font-size: 10px;
@@ -67,14 +56,8 @@
           color: var(--accent);
           border-radius: 2px;
         }
+        .top-actions { display: flex; align-items: center; gap: 6px; }
 
-        .top-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        /* Telemetry KPI Strip */
         .kpi-strip {
           background: var(--panel-header);
           border-bottom: 1px solid var(--border);
@@ -84,15 +67,15 @@
           align-items: center;
           font-family: var(--mono);
           font-size: 11px;
-          gap: 24px;
+          gap: 20px;
           color: var(--text-muted);
         }
         .kpi-metric { display: flex; gap: 6px; align-items: center; }
         .kpi-num { color: var(--text-bright); font-weight: 600; }
         .kpi-num.alert { color: var(--red); }
         .kpi-num.ok { color: var(--green); }
+        .kpi-num.blue { color: var(--accent); }
 
-        /* Main Console Workspace */
         main {
           flex: 1;
           padding: 12px 16px 24px;
@@ -112,7 +95,6 @@
         }
         @media (max-width: 1200px) { .grid-workbench { grid-template-columns: 1fr; height: auto; } }
 
-        /* Industrial Panel Cards */
         .panel {
           background: var(--panel);
           border: 1px solid var(--border);
@@ -133,7 +115,6 @@
           font-weight: 600;
           color: var(--text-bright);
           text-transform: uppercase;
-          letter-spacing: 0.04em;
         }
         .panel-body {
           padding: 10px;
@@ -144,10 +125,9 @@
           gap: 8px;
         }
 
-        /* Controls & Inputs */
         textarea {
           width: 100%;
-          height: 64px;
+          height: 60px;
           background: var(--bg);
           border: 1px solid var(--border);
           border-radius: 2px;
@@ -160,91 +140,68 @@
         textarea:focus { outline: none; border-color: var(--accent); }
 
         button {
-          font-family: var(--sans);
-          font-size: 11px;
-          font-weight: 500;
-          padding: 4px 10px;
-          border-radius: 3px;
-          border: 1px solid var(--border);
-          background: var(--panel-header);
-          color: var(--text);
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          transition: background 0.1s, border-color 0.1s;
-        }
-        button:hover {
-          background: #21262d;
-          border-color: #8b949e;
-          color: var(--text-bright);
-        }
-        .btn-primary {
-          background: #238636;
-          border-color: rgba(240,246,252,0.1);
-          color: #fff;
-        }
-        .btn-primary:hover { background: #2ea043; border-color: rgba(240,246,252,0.1); }
-        .btn-danger {
-          background: rgba(248,81,73,0.1);
-          border-color: rgba(248,81,73,0.4);
-          color: var(--red);
-        }
-        .btn-danger:hover { background: var(--red); color: #fff; }
-
-        /* Metadata Key-Value Tables */
-        .meta-table {
-          width: 100%;
-          border-collapse: collapse;
           font-family: var(--mono);
           font-size: 11px;
-        }
-        .meta-table td {
-          padding: 4px 6px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-        .meta-table td.key {
-          color: var(--text-muted);
-          width: 110px;
-          text-transform: uppercase;
-          font-size: 10px;
-        }
-        .meta-table td.val {
-          color: var(--text);
-          word-break: break-all;
-        }
-
-        /* Risk Score Gauge */
-        .risk-banner {
-          background: var(--bg);
-          border: 1px solid var(--border);
+          font-weight: 600;
+          padding: 6px 12px;
           border-radius: 2px;
-          padding: 8px 12px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+          cursor: pointer;
+          border: 1px solid transparent;
+          transition: all 0.15s ease;
         }
-        .risk-val {
-          font-family: var(--mono);
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--accent);
-        }
-        .risk-val.alert { color: var(--red); }
-        .risk-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+        .btn-primary { background: #238636; color: #fff; border-color: rgba(240,246,252,0.1); }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-danger { background: #da3633; color: #fff; }
+        .btn-danger:hover { background: #f85149; }
+        .btn-blue { background: #1f6feb; color: #fff; }
+        .btn-blue:hover { background: #388bfd; }
+        .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+        .btn-ghost:hover { color: var(--text-bright); border-color: var(--text-muted); }
 
-        /* Provenance Graph View */
-        #graphView {
-          width: 100%;
-          height: 100%;
-          background: #05070a;
-          position: relative;
+        .btn-sample {
+          font-family: var(--mono);
+          font-size: 10px;
+          padding: 3px 6px;
+          background: var(--panel-header);
+          border: 1px solid var(--border);
+          color: var(--text-muted);
+          border-radius: 2px;
         }
+        .btn-sample:hover { color: var(--text-bright); border-color: var(--accent); }
+
+        .meta-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 10px; }
+        .meta-table td { padding: 4px 6px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+        .meta-table td.key { color: var(--text-muted); width: 105px; }
+        .meta-table td.val { color: var(--text-bright); word-break: break-all; }
+
+        .risk-gauge {
+          border: 1px solid var(--border);
+          background: var(--bg);
+          padding: 8px 10px;
+          border-radius: 2px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .risk-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+        .risk-val { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text-bright); }
+        .risk-val.alert { color: var(--red); }
+
+        .graph-container {
+          position: relative;
+          flex: 1;
+          background: #040608;
+          border-radius: 2px;
+          border: 1px solid var(--border-subtle);
+          overflow: hidden;
+        }
+        svg { width: 100%; height: 100%; }
+
         .graph-legend {
           position: absolute;
-          top: 8px;
-          left: 8px;
-          background: rgba(13,17,23,0.9);
+          top: 10px;
+          left: 10px;
+          background: rgba(13,17,23,0.85);
           border: 1px solid var(--border);
           padding: 6px 10px;
           border-radius: 2px;
@@ -258,13 +215,22 @@
         .legend-row { display: flex; align-items: center; gap: 6px; }
         .legend-box { width: 8px; height: 8px; border-radius: 1px; }
 
-        /* D3 SVG Elements */
+        .impostor-node {
+          cursor: pointer;
+          transition: transform 0.2s ease;
+        }
+        .impostor-node:hover {
+          filter: drop-shadow(0 0 6px rgba(88, 166, 255, 0.9));
+        }
+        .impostor-node:hover path {
+          stroke: #ffffff !important;
+          stroke-width: 2px !important;
+        }
         .d3-node { cursor: pointer; stroke-width: 1.5px; }
         .d3-label { font-family: var(--mono); font-size: 9px; fill: var(--text-bright); pointer-events: none; }
         .d3-edge { stroke: #30363d; stroke-dasharray: 4, 3; }
         .d3-edge.verified { stroke: #58a6ff; stroke-width: 1.8px; }
 
-        /* Verification Status Banner */
         .verify-box {
           border: 1px solid var(--border);
           padding: 8px 10px;
@@ -278,31 +244,10 @@
         .verify-box.ok { background: rgba(63,185,80,0.08); border-color: var(--green); color: var(--green); }
         .verify-box.fail { background: rgba(248,81,73,0.08); border-color: var(--red); color: var(--red); }
 
-        /* MITRE ATT&CK Matrix Industrial Grid */
-        .matrix-scroll {
-          overflow-x: auto;
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 3px;
-        }
-        .matrix-flex {
-          display: flex;
-          min-width: 1400px;
-          border-left: 1px solid var(--border-subtle);
-        }
-        .matrix-col {
-          flex: 1;
-          min-width: 95px;
-          border-right: 1px solid var(--border-subtle);
-          display: flex;
-          flex-direction: column;
-        }
-        .matrix-col-header {
-          background: var(--panel-header);
-          padding: 6px 8px;
-          border-bottom: 1px solid var(--border);
-          text-align: left;
-        }
+        .matrix-scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
+        .matrix-flex { display: flex; min-width: 1400px; border-left: 1px solid var(--border-subtle); }
+        .matrix-col { flex: 1; min-width: 95px; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; }
+        .matrix-col-header { background: var(--panel-header); padding: 6px 8px; border-bottom: 1px solid var(--border); }
         .tactic-tag { font-family: var(--mono); font-size: 9px; color: var(--accent); }
         .tactic-name { font-size: 10px; font-weight: 600; color: var(--text-bright); }
 
@@ -314,27 +259,10 @@
           gap: 2px;
           background: var(--panel);
         }
-        .tech-item.hit {
-          background: rgba(248,81,73,0.1);
-          border-left: 2px solid var(--red);
-        }
-        .tech-code-row {
-          display: flex;
-          justify-content: space-between;
-          font-family: var(--mono);
-          font-size: 9px;
-          color: var(--text-muted);
-        }
-        .tech-badge-num {
-          background: var(--border);
-          color: var(--text);
-          padding: 0 4px;
-          border-radius: 2px;
-        }
-        .tech-item.hit .tech-badge-num {
-          background: var(--red);
-          color: #fff;
-        }
+        .tech-item.hit { background: rgba(248,81,73,0.1); border-left: 2px solid var(--red); }
+        .tech-code-row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--text-muted); }
+        .tech-badge-num { background: var(--border); color: var(--text); padding: 0 4px; border-radius: 2px; }
+        .tech-item.hit .tech-badge-num { background: var(--red); color: #fff; }
         .tech-label-name { font-size: 10px; color: var(--text); line-height: 1.2; }
     </style>
 </head>
@@ -344,106 +272,102 @@
     <div class="brand-section">
         <span class="system-title">LOGANCHOR-X</span>
         <span class="deployment-badge">AIR-GAP DEFENSE SUBSTRATE</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">NTRO PS-26156 &middot; Cryptographic Pre-Processing</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">NTRO PS-26156</span>
     </div>
     <div class="top-actions">
         <button class="btn-primary" id="btnSim" onclick="toggleSim()">Run Attack Sequence</button>
-        <a href="/api/evidence-bundle" style="text-decoration:none;">
-            <button>Export Evidence Bundle</button>
-        </a>
-        <button onclick="resetConsole()">Reset State</button>
+        <button class="btn-blue" onclick="triggerBenchmark(5000)">&#x26A1; Run 5k EPS Benchmark</button>
+        <button class="btn-ghost" onclick="downloadMlExport()">Export ML Tensors (PyG)</button>
+        <button class="btn-ghost" onclick="downloadEvidenceBundle()">Evidence Bundle</button>
+        <button class="btn-ghost" onclick="resetConsole()">Reset</button>
     </div>
 </header>
 
-<!-- Industrial KPI Strip -->
 <div class="kpi-strip">
-    <div class="kpi-metric"><span>Ingested Events:</span><span class="kpi-num" id="kpiIngested">0</span></div>
-    <div class="kpi-metric"><span>Sealed Batches:</span><span class="kpi-num" id="kpiBatches">0</span></div>
-    <div class="kpi-metric"><span>Adapters Active:</span><span class="kpi-num" id="kpiFormats">0/6</span></div>
-    <div class="kpi-metric"><span>ATT&amp;CK Detections:</span><span class="kpi-num alert" id="kpiMitre">0</span></div>
-    <div class="kpi-metric"><span>Integrity Validations:</span><span class="kpi-num ok" id="kpiChecks">0</span></div>
-    <div class="kpi-metric" style="margin-left:auto;">
-        <span>Simulation Phase:</span>
-        <span class="kpi-num" id="kpiStage" style="color:var(--amber);">IDLE</span>
-    </div>
+    <div class="kpi-metric">Ingested: <span class="kpi-num" id="kpiIngested">0</span></div>
+    <div class="kpi-metric">Sealed Batches: <span class="kpi-num" id="kpiSealed">0</span></div>
+    <div class="kpi-metric">Adapters: <span class="kpi-num ok">0/6</span></div>
+    <div class="kpi-metric">ATT&amp;CK Detections: <span class="kpi-num alert" id="kpiDetections">0</span></div>
+    <div class="kpi-metric">Integrity Validations: <span class="kpi-num ok" id="kpiValidations">0</span></div>
+    <div class="kpi-metric">Bench Throughput: <span class="kpi-num blue" id="kpiBenchEps">—</span></div>
+    <div class="kpi-metric" style="margin-left:auto;">Simulation Phase: <span class="kpi-num" id="kpiSimStatus" style="color:var(--amber);">IDLE</span></div>
 </div>
 
 <main>
-    <!-- Workbench Grid -->
     <div class="grid-workbench">
 
-        <!-- Column 1: Ingestion & Parsing Panel -->
+        <!-- Column 1: Ingestion & Extraction -->
         <div class="panel">
             <div class="panel-header">
-                <span>Ingestion Pipeline</span>
-                <span style="color:var(--text-muted);font-weight:normal;">T=0 Raw Leaf Hashing</span>
+                <span>Ingestion &amp; Benchmark</span>
+                <span style="font-size:10px;color:var(--text-muted);">T=0 Commit</span>
             </div>
             <div class="panel-body">
-                <div class="risk-banner">
+                <div class="risk-gauge">
                     <div>
-                        <div class="risk-label">Correlation Risk Score</div>
-                        <div style="font-size:10px;color:var(--text-muted);">Adjacent Kill-Chain Composite</div>
+                        <div class="risk-label">KILL-CHAIN RISK SCORE</div>
+                        <div style="font-size:9px;color:var(--text-muted);">Adjacent Progression Weighted</div>
                     </div>
-                    <div class="risk-val" id="riskScoreVal">0</div>
+                    <div class="risk-val" id="riskScoreVal">0 / 100</div>
                 </div>
 
                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                    <button onclick="setSample('scan')">PortScan</button>
-                    <button onclick="setSample('ssh')">SSH Brute</button>
-                    <button onclick="setSample('priv')">Sudo Root</button>
-                    <button onclick="setSample('exfil')">Exfiltration</button>
+                    <button class="btn-sample" onclick="setSample('scan')">PortScan</button>
+                    <button class="btn-sample" onclick="setSample('ssh')">SSH Brute</button>
+                    <button class="btn-sample" onclick="setSample('priv')">Sudo Root</button>
+                    <button class="btn-sample" onclick="setSample('exfil')">Exfil</button>
                 </div>
 
                 <textarea id="logInput" placeholder="Raw telemetric string payload..."></textarea>
 
                 <div style="display:flex;gap:6px;">
                     <button class="btn-primary" onclick="ingestManual()" style="flex:1;">Ingest &amp; Anchor</button>
-                    <button onclick="sealManual()">Seal Batch</button>
+                    <button class="btn-ghost" onclick="sealManual()">Seal Batch</button>
                 </div>
 
                 <table class="meta-table" style="margin-top:4px;">
                     <tr>
                         <td class="key">Leaf Digest</td>
-                        <td class="val" id="dispLeafHash" style="color:var(--accent);">—</td>
+                        <td class="val" id="dispLeafHash">—</td>
                     </tr>
                     <tr>
                         <td class="key">Drain Pattern</td>
-                        <td class="val" id="dispTemplate" style="font-size:10px;">—</td>
+                        <td class="val" id="dispTemplate">—</td>
                     </tr>
                     <tr>
-                        <td class="key">ATT&amp;CK Tactic</td>
-                        <td class="val" id="dispMitre">—</td>
+                        <td class="key">Benchmark Run</td>
+                        <td class="val" id="dispBenchStats" style="color:var(--accent);">—</td>
                     </tr>
                 </table>
             </div>
         </div>
 
-        <!-- Column 2: Center Provenance Graph (D3.js) -->
-        <div class="panel">
+        <!-- Column 2: Attack Provenance Topology -->
+        <div class="panel" style="display:flex;flex-direction:column;">
             <div class="panel-header">
                 <span>Causal Provenance Topology</span>
-                <button onclick="manualRefresh()" style="padding:2px 6px;font-size:10px;">Refresh Topology</button>
+                <button class="btn-ghost" style="padding:2px 6px;font-size:10px;" onclick="loadGraph()">Refresh Topology</button>
             </div>
-            <div id="graphView">
+            <div class="graph-container" id="graphView">
                 <div class="graph-legend">
-                    <div class="legend-row"><div class="legend-box" style="background:#58a6ff;"></div><span>Reconnaissance (T1046)</span></div>
-                    <div class="legend-row"><div class="legend-box" style="background:#d29922;"></div><span>Credential Access (T1110)</span></div>
-                    <div class="legend-row"><div class="legend-box" style="background:#bc8cff;"></div><span>Privilege Escalation (T1078)</span></div>
-                    <div class="legend-row"><div class="legend-box" style="background:#f85149;"></div><span>Data Exfiltration (T1041)</span></div>
+                    <div class="legend-row"><div class="legend-box" style="background:#58a6ff;"></div> Reconnaissance (T1046)</div>
+                    <div class="legend-row"><div class="legend-box" style="background:#d29922;"></div> Credential Access (T1110)</div>
+                    <div class="legend-row"><div class="legend-box" style="background:#bc8cff;"></div> Privilege Escalation (T1078)</div>
+                    <div class="legend-row"><div class="legend-box" style="background:#f85149;"></div> Data Exfiltration (T1041)</div>
                 </div>
-                <svg id="svgGraph" width="100%" height="100%"></svg>
+                <svg id="svgGraph"></svg>
             </div>
         </div>
 
-        <!-- Column 3: Cryptographic Verification & Tamper Detection -->
+        <!-- Column 3: Cryptographic Audit & Tampering -->
         <div class="panel">
             <div class="panel-header">
                 <span>Cryptographic Verification</span>
-                <span style="color:var(--text-muted);font-weight:normal;">Merkle Sibling Path</span>
+                <span style="font-size:10px;color:var(--green);">Merkle Inclusion</span>
             </div>
             <div class="panel-body">
-                <div id="dispEventMeta" style="border:1px solid var(--border);padding:8px;border-radius:2px;background:var(--bg);font-family:var(--mono);font-size:11px;">
-                    <div style="color:var(--text-muted);text-align:center;">Select any node in the topology to inspect payload and audit proofs.</div>
+                <div style="color:var(--text-muted);font-family:var(--mono);font-size:10px;" id="dispEventMeta">
+                    Select any node in the topology to inspect payload and audit proofs.
                 </div>
 
                 <div style="display:flex;gap:6px;">
@@ -468,11 +392,11 @@
 
     </div>
 
-    <!-- Row 2: Complete 14-Tactic ATT&CK Matrix Navigator -->
+    <!-- Row 2: Complete 14-Tactic ATT&CK Matrix -->
     <div class="panel">
         <div class="panel-header">
             <span>MITRE ATT&amp;CK&reg; Enterprise Navigator (14 Tactics)</span>
-            <span style="color:var(--text-muted);font-weight:normal;">Offline Rule Classifier &middot; Dynamic Technique Counting</span>
+            <span style="color:var(--text-muted);font-weight:normal;">Offline Rule Classifier</span>
         </div>
         <div class="matrix-scroll">
             <div class="matrix-flex" id="matrixContainer">
@@ -508,7 +432,6 @@
         activeLeaf = d.leafHash;
         document.getElementById("dispLeafHash").textContent = d.leafHash;
         document.getElementById("dispTemplate").textContent = d.template;
-        document.getElementById("dispMitre").textContent = (d.mitreId || "UNCLASSIFIED") + " (" + (d.mitreTacticName || "None") + ")";
         manualRefresh();
       });
     }
@@ -522,6 +445,22 @@
         });
     }
 
+    function triggerBenchmark(n) {
+      var btn = event.target;
+      btn.textContent = "Benchmarking...";
+      fetch("/api/benchmark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: n })
+      })
+      .then(r => r.json())
+      .then(d => {
+        btn.textContent = "⚡ Run 5k EPS Benchmark";
+        document.getElementById("dispBenchStats").textContent = d.throughputEps.toLocaleString() + " EPS (" + d.elapsedMs + "ms for " + d.eventsProcessed + " logs)";
+        manualRefresh();
+      });
+    }
+
     function resetConsole() {
       if (!confirm("Reset runtime session state? Ledger remains committed.")) return;
       fetch("/api/reset", { method: "POST" })
@@ -529,27 +468,41 @@
           activeLeaf = "";
           document.getElementById("dispLeafHash").textContent = "—";
           document.getElementById("dispTemplate").textContent = "—";
-          document.getElementById("dispMitre").textContent = "—";
-          document.getElementById("dispEventMeta").innerHTML = '<div style="color:var(--text-muted);text-align:center;">State cleared.</div>';
-          document.getElementById("verifyOutcome").style.display = "none";
-          document.getElementById("dispRecomputedRoot").textContent = "—";
-          document.getElementById("dispAnchoredRoot").textContent = "—";
+          document.getElementById("dispBenchStats").textContent = "—";
           manualRefresh();
         });
     }
 
+    function downloadMlExport() {
+      fetch("/api/ml-export")
+        .then(r => r.json())
+        .then(d => {
+          var blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "loganchor_gnn_tensors.json";
+          a.click();
+        });
+    }
+
+    function downloadEvidenceBundle() {
+      fetch("/api/evidence-bundle")
+        .then(r => r.json())
+        .then(d => {
+          var blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "cyberguard_evidence_bundle.json";
+          a.click();
+        });
+    }
+
     function toggleSim() {
-      var btn = document.getElementById("btnSim");
-      var action = simActive ? "stop" : "start";
-      fetch("/api/simulate-attack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: action })
-      }).then(() => {
-        simActive = !simActive;
-        btn.textContent = simActive ? "Halt Sequence" : "Run Attack Sequence";
-        btn.className = simActive ? "btn-danger" : "btn-primary";
-      });
+      fetch("/api/simulate-attack", { method: "POST" })
+        .then(r => r.json())
+        .then(() => manualRefresh());
     }
 
     function manualRefresh() {
@@ -562,12 +515,16 @@
       fetch("/api/status")
         .then(r => r.json())
         .then(d => {
-          document.getElementById("kpiIngested").textContent = (d.totalIngested || 0).toLocaleString();
-          document.getElementById("kpiBatches").textContent = d.batchesAnchored || 0;
-          document.getElementById("kpiFormats").textContent = (d.uniqueFormatsCount || 0) + "/6";
-          document.getElementById("kpiMitre").textContent = d.techniquesCount || 0;
-          document.getElementById("kpiChecks").textContent = d.integrityChecksPassed || 0;
-          document.getElementById("kpiStage").textContent = d.simStage || "IDLE";
+          document.getElementById("kpiIngested").textContent = (d.ingested || 0).toLocaleString();
+          document.getElementById("kpiSealed").textContent = d.sealedBatches || 0;
+          document.getElementById("kpiDetections").textContent = d.detections || 0;
+          document.getElementById("kpiValidations").textContent = d.validations || 0;
+          document.getElementById("kpiSimStatus").textContent = d.simRunning ? "ATTACK IN PROGRESS" : "IDLE";
+          document.getElementById("kpiSimStatus").style.color = d.simRunning ? "var(--red)" : "var(--amber)";
+
+          if (d.benchEps > 0) {
+            document.getElementById("kpiBenchEps").textContent = d.benchEps.toLocaleString() + " EPS";
+          }
 
           var sc = d.threatScore || 0;
           var rEl = document.getElementById("riskScoreVal");
@@ -593,8 +550,20 @@
         .then(d => renderTopology(d.nodes || [], d.edges || []));
     }
 
+    var activeSim = null;
+    var cachedNodeHash = "";
+
     function renderTopology(nodes, edges) {
+      var currentHash = nodes.map(n => n.id).join(",") + "|" + edges.length;
+      if (currentHash === cachedNodeHash && activeSim) {
+        return; // No new nodes, do not re-run heavy physics simulation!
+      }
+      cachedNodeHash = currentHash;
+
       var svg = d3.select("#svgGraph");
+      if (activeSim) {
+        activeSim.stop();
+      }
       svg.selectAll("*").remove();
 
       var w = document.getElementById("graphView").clientWidth;
@@ -612,19 +581,20 @@
       }
 
       var colorMap = {
-        1: "#58a6ff", // Recon
+        1: "#58a6ff",
         2: "#58a6ff",
-        3: "#d29922", // Credential
-        4: "#bc8cff", // PrivEsc
+        3: "#d29922",
+        4: "#bc8cff",
         5: "#bc8cff",
-        6: "#f85149"  // Exfil
+        6: "#f85149"
       };
 
-      var sim = d3.forceSimulation(nodes)
+      activeSim = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(edges).id(d => d.id).distance(80))
         .force("charge", d3.forceManyBody().strength(-140))
         .force("center", d3.forceCenter(w / 2, h / 2))
-        .force("collision", d3.forceCollide().radius(24));
+        .force("collision", d3.forceCollide().radius(24))
+        .alphaDecay(0.04); // Settle quickly to save CPU
 
       var link = svg.append("g")
         .selectAll("line")
@@ -632,34 +602,69 @@
         .enter().append("line")
         .attr("class", d => d.confidence && d.confidence.includes("HIGH") ? "d3-edge verified" : "d3-edge");
 
+      // Gamified Hacker / Among Us Impostor Nodes
       var node = svg.append("g")
-        .selectAll("circle")
+        .selectAll("g.impostor-node")
         .data(nodes)
-        .enter().append("circle")
-        .attr("class", "d3-node")
-        .attr("r", 9)
-        .attr("fill", d => colorMap[d.stage] || "#8b949e")
-        .attr("stroke", "#080b0f")
+        .enter().append("g")
+        .attr("class", "impostor-node")
+        .style("cursor", "pointer")
         .on("click", (evt, d) => inspectNode(d));
+
+      // Impostor Backpack
+      node.append("rect")
+        .attr("x", -15)
+        .attr("y", -6)
+        .attr("width", 5)
+        .attr("height", 14)
+        .attr("rx", 2)
+        .attr("fill", d => colorMap[d.stage] || "#8b949e")
+        .attr("stroke", "#0d1117")
+        .attr("stroke-width", 1.2);
+
+      // Impostor Spacesuit Body
+      node.append("path")
+        .attr("d", "M -10,-4 C -10,-14 8,-14 8,-4 L 8,8 C 8,11 6,13 3,13 L 2,13 L 2,16 C 2,18 -2,18 -2,16 L -2,13 L -4,13 L -4,16 C -4,18 -8,18 -8,16 L -8,13 C -10,13 -10,10 -10,8 Z")
+        .attr("fill", d => colorMap[d.stage] || "#8b949e")
+        .attr("stroke", "#0d1117")
+        .attr("stroke-width", 1.4);
+
+      // Impostor Glow/Visor (Cyber Glass)
+      node.append("ellipse")
+        .attr("cx", 2)
+        .attr("cy", -4)
+        .attr("rx", 6.5)
+        .attr("ry", 3.8)
+        .attr("fill", "#c9d1d9")
+        .attr("stroke", "#080b0f")
+        .attr("stroke-width", 1.2);
+
+      // Visor Glare/Reflect
+      node.append("ellipse")
+        .attr("cx", 3)
+        .attr("cy", -5)
+        .attr("rx", 3.2)
+        .attr("ry", 1.4)
+        .attr("fill", "#ffffff")
+        .attr("opacity", 0.85);
 
       var label = svg.append("g")
         .selectAll("text")
         .data(nodes)
         .enter().append("text")
         .attr("class", "d3-label")
-        .attr("dx", 12).attr("dy", 3)
+        .attr("dx", 14).attr("dy", 4)
         .text(d => d.mitreId);
 
-      sim.on("tick", () => {
+      activeSim.on("tick", () => {
         link
           .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
           .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
         node
-          .attr("cx", d => Math.max(14, Math.min(w - 14, d.x)))
-          .attr("cy", d => Math.max(14, Math.min(h - 14, d.y)));
+          .attr("transform", d => `translate(${Math.max(16, Math.min(w - 16, d.x))}, ${Math.max(18, Math.min(h - 18, d.y))})`);
         label
-          .attr("x", d => Math.max(14, Math.min(w - 14, d.x)))
-          .attr("y", d => Math.max(14, Math.min(h - 14, d.y)));
+          .attr("x", d => Math.max(16, Math.min(w - 16, d.x)))
+          .attr("y", d => Math.max(18, Math.min(h - 18, d.y)));
       });
     }
 
@@ -696,7 +701,7 @@
       b.style.display = "flex";
       b.className = "verify-box " + (d.valid ? "ok" : "fail");
       b.innerHTML = `
-        <strong>${d.valid ? "PROFIT-INCLUSION PROOF VALID" : "INTEGRITY MISMATCH DETECTED"}</strong>
+        <strong>${d.valid ? "PROOF-INCLUSION VALIDATED" : "INTEGRITY MISMATCH DETECTED"}</strong>
         <div>${d.message} &middot; Batch: ${d.batchId || "UNCOMMITTED"}</div>
       `;
       document.getElementById("dispRecomputedRoot").textContent = d.recomputedRoot || "N/A";
@@ -733,7 +738,7 @@
       refreshStatus();
       loadGraph();
       loadMatrix();
-    }, 1800);
+    }, 3000);
 
     manualRefresh();
 </script>

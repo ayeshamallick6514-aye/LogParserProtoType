@@ -6,156 +6,75 @@ import com.sun.net.httpserver.HttpServer;
 
 import java.io.*;
 import java.net.InetSocketAddress;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * LogAnchor-X Backend
- *
- * Pure JDK 17, zero external dependencies, zero external network calls.
- * Single process, single file, designed to run air-gapped.
- *
- * Pipeline: format-detect -> mask volatile fields -> Drain template mining
- *           -> MITRE heuristic tagging -> triple-key correlation
- *           -> SHA-256 leaf hash (over ORIGINAL raw bytes, always)
- *           -> Merkle batch anchoring -> cross-batch hash chain -> ledger file.
- */
 public class Main {
 
-    static final int PORT = 8080;
-    static final int BATCH_SIZE = 64;
-    static final long CORRELATION_WINDOW_SECONDS = 600;
-    static final Path LEDGER_FILE = Paths.get("cyberguard_ledger.dat");
-
-    public static void main(String[] args) throws IOException {
-        Engine engine = new Engine();
-        engine.loadLedger();
-
-        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
-
-        server.createContext("/", new StaticHandler());
-        server.createContext("/api/parse", new ParseHandler(engine));
-        server.createContext("/api/verify", new VerifyHandler(engine));
-        server.createContext("/api/tamper-simulate", new TamperHandler(engine));
-        server.createContext("/api/mitre-matrix", new MitreMatrixHandler(engine));
-        server.createContext("/api/logs-by-technique", new LogsByTechniqueHandler(engine));
-        server.createContext("/api/provenance-graph", new ProvenanceGraphHandler(engine));
-        server.createContext("/api/evidence-bundle", new EvidenceBundleHandler(engine));
-        server.createContext("/api/simulate-attack", new SimulateAttackHandler(engine));
-        server.createContext("/api/status", new StatusHandler(engine));
-        server.createContext("/api/anchor", new AnchorHandler(engine));
-        server.createContext("/api/reset", new ResetHandler(engine));
-
-        int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
-        server.setExecutor(Executors.newFixedThreadPool(poolSize));
-        server.start();
-
-        System.out.println("==========================================================");
-        System.out.println("[OK] LogAnchor-X Unified Backend Live on http://localhost:" + PORT);
-        System.out.println("[OK] Bounded Pool: " + poolSize + " workers | Air-Gap Ready");
-        System.out.println("==========================================================");
-    }
-
     // ============================================================
-    // Core data model
+    // Core Domain Models
     // ============================================================
     static class LogEvent {
         String id;
-        String rawText;
-        String maskedText;
-        String templateId;
-        String templateText;
-        boolean templateIsNovel;
-        String format;
         long timestampMillis;
-
+        String raw;
+        String format;
         String sourceIp;
         String destPort;
         String serviceType;
-
-        String mitreTactic;
+        String masked;
+        String templateId;
+        String template;
+        boolean isNovelTemplate;
         String mitreTacticId;
-        String mitreTechnique;
+        String mitreTacticName;
         String mitreTechniqueId;
+        String mitreTechniqueName;
         int killChainOrder;
-
         String leafHash;
         String batchId;
-        int leafIndexInBatch = -1;
-        List<String> merkleSiblingPath = new ArrayList<>();
+    }
 
-        Map<String, Object> toJson() {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", id);
-            m.put("raw", rawText);
-            m.put("masked", maskedText);
-            m.put("template", templateText);
-            m.put("templateId", templateId);
-            m.put("templateIsNovel", templateIsNovel);
-            m.put("format", format);
-            m.put("timestamp", timestampMillis);
-            m.put("sourceIp", sourceIp != null ? sourceIp : "UNKNOWN_SRC");
-            m.put("destPort", destPort != null ? destPort : "0");
-            m.put("service", serviceType != null ? serviceType : "SYSTEM");
-            m.put("mitreTacticName", mitreTactic);
-            m.put("mitreTacticId", mitreTacticId);
-            m.put("mitreTechnique", mitreTechnique);
-            m.put("mitreId", mitreTechniqueId);
-            m.put("stage", killChainOrder);
-            m.put("leafHash", leafHash);
-            m.put("batchId", batchId);
-            m.put("sealed", batchId != null);
-            return m;
-        }
+    static class Batch {
+        String batchId;
+        long timestampMillis;
+        List<String> leafHashes = new ArrayList<>();
+        String merkleRoot;
+        String chainedRoot;
+        boolean isSealed;
+    }
+
+    static class MerkleProof {
+        String leafHash;
+        String batchId;
+        String rootHash;
+        List<String> auditPath = new ArrayList<>();
+        List<String> directions = new ArrayList<>();
+        boolean isValid;
     }
 
     // ============================================================
-    // Format detection
-    // ============================================================
-    static class FormatAdapter {
-        static final Pattern CSV_LIKE = Pattern.compile("^[^,]+,[^,]+,[^,]+");
-
-        static String detect(String raw) {
-            String trimmed = raw.trim();
-            if (trimmed.startsWith("CEF:")) return "CEF";
-            if (trimmed.startsWith("LEEF:")) return "LEEF";
-            if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-                    (trimmed.startsWith("[") && trimmed.endsWith("]"))) return "JSON";
-            if (trimmed.startsWith("<") && trimmed.endsWith(">")) return "XML";
-            if (CSV_LIKE.matcher(trimmed).find() && trimmed.split(",").length >= 3) return "CSV";
-            return "SYSLOG";
-        }
-    }
-
-    // ============================================================
-    // Volatile-field masking
+    // Masking & Extraction Engine
     // ============================================================
     static class Masker {
-        static final Pattern IP = Pattern.compile("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b");
-        static final Pattern PORT = Pattern.compile("(?:dpt=|port\\s+|spt=|:)(\\d{2,5})\\b", Pattern.CASE_INSENSITIVE);
-        static final Pattern UUID = Pattern.compile(
-                "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b");
-        static final Pattern HEX = Pattern.compile("\\b0x[0-9a-fA-F]+\\b");
-        static final Pattern TIMESTAMP1 = Pattern.compile(
-                "\\b\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z)?\\b");
-        static final Pattern TIMESTAMP2 = Pattern.compile(
-                "\\b[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}\\b");
-        static final Pattern NUMBER = Pattern.compile("\\b\\d+\\b");
+        private static final Pattern IP = Pattern.compile("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b");
+        private static final Pattern UUID_PAT = Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+        private static final Pattern HEX = Pattern.compile("0x[0-9a-fA-F]+");
+        private static final Pattern NUMBER = Pattern.compile("(?<=\\s|=|^)\\d+(?=\\s|$|,|;|\\.)");
+        private static final Pattern PORT = Pattern.compile("(?:dpt|port|dstport)=(\\d+)");
 
         static String mask(String raw) {
-            String s = raw;
-            s = TIMESTAMP1.matcher(s).replaceAll("<TS>");
-            s = TIMESTAMP2.matcher(s).replaceAll("<TS>");
-            s = IP.matcher(s).replaceAll("<IP>");
-            s = UUID.matcher(s).replaceAll("<UUID>");
+            String s = IP.matcher(raw).replaceAll("<IP>");
+            s = UUID_PAT.matcher(s).replaceAll("<UUID>");
             s = HEX.matcher(s).replaceAll("<HEX>");
             s = NUMBER.matcher(s).replaceAll("<N>");
             return s;
@@ -183,7 +102,7 @@ public class Main {
     }
 
     // ============================================================
-    // Drain Template Miner
+    // Bounded Drain Template Miner
     // ============================================================
     static class TemplateCluster {
         String id;
@@ -245,7 +164,7 @@ public class Main {
     }
 
     // ============================================================
-    // MITRE Classifier (14 Enterprise Tactics)
+    // MITRE ATT&CK Enterprise Classifier
     // ============================================================
     static class MitreClassifier {
         static final List<String[]> MITRE_14_TACTICS = List.of(
@@ -265,243 +184,246 @@ public class Main {
                 new String[]{"TA0040", "Impact"}
         );
 
-        static Object[] classify(String rawLower) {
-            if (rawLower.contains("failed password") || rawLower.contains("authentication failure")
-                    || rawLower.contains("login denied") || rawLower.contains("auth error")) {
-                return new Object[]{"Credential Access", "TA0006", "Brute Force", "T1110", 3};
+        static class Rule {
+            Pattern pattern;
+            String tacticId;
+            String tacticName;
+            String techId;
+            String techName;
+            int killChainOrder;
+
+            Rule(String regex, String tacId, String tacName, String techId, String techName, int order) {
+                this.pattern = Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
+                this.tacticId = tacId;
+                this.tacticName = tacName;
+                this.techId = techId;
+                this.techName = techName;
+                this.killChainOrder = order;
             }
-            if (rawLower.contains("sudo") || rawLower.contains("privilege escalation") || rawLower.contains("root access")) {
-                return new Object[]{"Privilege Escalation", "TA0004", "Valid Accounts", "T1078", 4};
-            }
-            if (rawLower.contains("large_transfer") || rawLower.contains("export")
-                    || rawLower.contains("data_exfil") || rawLower.contains("download") || rawLower.contains("52428800")) {
-                return new Object[]{"Exfiltration", "TA0010", "Exfiltration Over C2 Channel", "T1041", 6};
-            }
-            if (rawLower.contains("port_scan") || rawLower.contains("scan") || rawLower.contains("connection attempt")) {
-                return new Object[]{"Reconnaissance", "TA0043", "Network Service Discovery", "T1046", 1};
-            }
-            if (rawLower.contains("ssh2") || rawLower.contains("accepted password") || rawLower.contains("remote")) {
-                return new Object[]{"Lateral Movement", "TA0008", "Remote Services", "T1021", 5};
-            }
-            return new Object[]{"Unclassified", "UNCLASSIFIED", "Unknown/Novel Pattern", "UNCLASSIFIED", 0};
         }
-    }
 
-    // ============================================================
-    // Merkle Tree & Proof Recomputation
-    // ============================================================
-    static class Batch {
-        String batchId;
-        List<LogEvent> events = new ArrayList<>();
-        String merkleRoot;
-        String chainedRoot;
-        long sealedAtMillis;
-    }
+        static final List<Rule> RULES = List.of(
+                new Rule("port_scan|flags=syn|nmap|dpt=22", "TA0043", "Reconnaissance", "T1046", "Network Service Discovery", 1),
+                new Rule("failed password|invalid user|authentication failure", "TA0006", "Credential Access", "T1110", "Brute Force", 3),
+                new Rule("sudo:.*root.*bash|privilege|user=root", "TA0004", "Privilege Escalation", "T1078", "Valid Accounts", 4),
+                new Rule("data_exfil|large_transfer|bytes=\\d{7,}|exfil", "TA0010", "Exfiltration", "T1041", "Exfiltration Over C2", 6),
+                new Rule("exploit|remote code|rce", "TA0001", "Initial Access", "T1190", "Exploit Public-Facing App", 2),
+                new Rule("powershell|cmd.exe|/bin/sh", "TA0002", "Execution", "T1059", "Command and Scripting Interpreter", 3),
+                new Rule("cron|scheduled|registry", "TA0003", "Persistence", "T1053", "Scheduled Task/Job", 4),
+                new Rule("clear log|wevtutil|disable fw", "TA0005", "Defense Evasion", "T1070", "Indicator Removal", 5),
+                new Rule("net view|arp -a|whoami", "TA0007", "Discovery", "T1087", "Account Discovery", 2),
+                new Rule("psexec|wmic|ssh.*admin", "TA0008", "Lateral Movement", "T1021", "Remote Services", 5),
+                new Rule("dump|archive|tar -czf", "TA0009", "Collection", "T1560", "Archive Collected Data", 5),
+                new Rule("beacon|c2|reverse_shell", "TA0011", "Command and Control", "T1071", "Application Layer Protocol", 6),
+                new Rule("ransom|encrypt|wipe|drop database", "TA0040", "Impact", "T1486", "Data Encrypted for Impact", 7)
+        );
 
-    static String sha256Hex(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : digest) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    static class MerkleBuilder {
-        static String build(List<LogEvent> events) {
-            if (events.isEmpty()) return sha256Hex("");
-            recomputeSiblingPaths(events);
-
-            List<String> level = new ArrayList<>();
-            for (LogEvent e : events) level.add(e.leafHash);
-
-            while (level.size() > 1) {
-                List<String> next = new ArrayList<>();
-                for (int i = 0; i < level.size(); i += 2) {
-                    String left = level.get(i);
-                    String right = (i + 1 < level.size()) ? level.get(i + 1) : level.get(i);
-                    next.add(sha256Hex(left + right));
+        static String[] classify(String text) {
+            for (Rule r : RULES) {
+                if (r.pattern.matcher(text).find()) {
+                    return new String[]{r.tacticId, r.tacticName, r.techId, r.techName, String.valueOf(r.killChainOrder)};
                 }
-                level = next;
             }
-            return level.get(0);
+            return new String[]{"TA0007", "Discovery", "T1082", "System Info Discovery", "0"};
+        }
+    }
+
+    // ============================================================
+    // Merkle Tree & Ledger Implementation
+    // ============================================================
+    static class MerkleEngine {
+        static String sha256(String input) {
+            try {
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                byte[] b = md.digest(input.getBytes(StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                for (byte x : b) sb.append(String.format("%02x", x));
+                return sb.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
         }
 
-        static void recomputeSiblingPaths(List<LogEvent> events) {
-            List<String> level = new ArrayList<>();
-            for (LogEvent e : events) {
-                level.add(e.leafHash);
-                e.merkleSiblingPath = new ArrayList<>();
-            }
-            List<List<Integer>> owners = new ArrayList<>();
-            for (int i = 0; i < level.size(); i++) {
-                List<Integer> o = new ArrayList<>(); o.add(i); owners.add(o);
-            }
-
-            while (level.size() > 1) {
+        static String buildRoot(List<String> leaves) {
+            if (leaves.isEmpty()) return sha256("EMPTY_TREE");
+            List<String> current = new ArrayList<>(leaves);
+            while (current.size() > 1) {
                 List<String> next = new ArrayList<>();
-                List<List<Integer>> nextOwners = new ArrayList<>();
-                for (int i = 0; i < level.size(); i += 2) {
-                    String left = level.get(i);
-                    boolean hasRight = i + 1 < level.size();
-                    String right = hasRight ? level.get(i + 1) : level.get(i);
-
-                    for (int ownerIdx : owners.get(i)) {
-                        events.get(ownerIdx).merkleSiblingPath.add(right);
+                for (int i = 0; i < current.size(); i += 2) {
+                    if (i + 1 < current.size()) {
+                        next.add(sha256(current.get(i) + current.get(i + 1)));
+                    } else {
+                        next.add(current.get(i));
                     }
-                    if (hasRight) {
-                        for (int ownerIdx : owners.get(i + 1)) {
-                            events.get(ownerIdx).merkleSiblingPath.add(left);
+                }
+                current = next;
+            }
+            return current.get(0);
+        }
+
+        static MerkleProof generateProof(List<String> leaves, String targetLeaf) {
+            MerkleProof proof = new MerkleProof();
+            proof.leafHash = targetLeaf;
+            proof.rootHash = buildRoot(leaves);
+
+            int idx = leaves.indexOf(targetLeaf);
+            if (idx == -1) {
+                proof.isValid = false;
+                return proof;
+            }
+
+            List<String> current = new ArrayList<>(leaves);
+            while (current.size() > 1) {
+                List<String> next = new ArrayList<>();
+                for (int i = 0; i < current.size(); i += 2) {
+                    if (i + 1 < current.size()) {
+                        if (i == idx) {
+                            proof.auditPath.add(current.get(i + 1));
+                            proof.directions.add("R");
+                        } else if (i + 1 == idx) {
+                            proof.auditPath.add(current.get(i));
+                            proof.directions.add("L");
                         }
+                        next.add(sha256(current.get(i) + current.get(i + 1)));
+                    } else {
+                        next.add(current.get(i));
                     }
-                    next.add(sha256Hex(left + right));
-                    List<Integer> merged = new ArrayList<>(owners.get(i));
-                    if (hasRight) merged.addAll(owners.get(i + 1));
-                    nextOwners.add(merged);
                 }
-                level = next;
-                owners = nextOwners;
+                idx /= 2;
+                current = next;
             }
+            proof.isValid = true;
+            return proof;
         }
 
-        static String recomputeRoot(String leafHash, List<String> siblingPath) {
-            String current = leafHash;
-            for (String sibling : siblingPath) {
-                current = sha256Hex(current + sibling);
+        static boolean verifyProof(String leaf, List<String> path, List<String> dirs, String root) {
+            String curr = leaf;
+            for (int i = 0; i < path.size(); i++) {
+                String sibling = path.get(i);
+                String dir = dirs.get(i);
+                if ("L".equals(dir)) {
+                    curr = sha256(sibling + curr);
+                } else {
+                    curr = sha256(curr + sibling);
+                }
             }
-            return current;
+            return curr.equals(root);
         }
     }
 
     // ============================================================
-    // Engine: Runtime Orchestrator
+    // Core Engine Orchestrator
     // ============================================================
     static class Engine {
-        final DrainTree drainTree = new DrainTree();
+        final DrainTree drain = new DrainTree();
         final Map<String, LogEvent> eventsById = new ConcurrentHashMap<>();
-        final Map<String, LogEvent> eventsByHash = new ConcurrentHashMap<>();
-        final List<LogEvent> pendingBuffer = Collections.synchronizedList(new ArrayList<>());
-        final List<Batch> sealedBatches = Collections.synchronizedList(new ArrayList<>());
+        final Map<String, LogEvent> eventsByLeaf = new ConcurrentHashMap<>();
+        final List<Batch> sealedBatches = new CopyOnWriteArrayList<>();
+        final List<LogEvent> currentBatchLeaves = new CopyOnWriteArrayList<>();
+        final File ledgerFile = new File("cyberguard_ledger.dat");
+
         final AtomicInteger eventCounter = new AtomicInteger(0);
         final AtomicInteger batchCounter = new AtomicInteger(0);
-        final AtomicInteger integrityChecksPassed = new AtomicInteger(0);
-        final Set<String> detectedFormats = ConcurrentHashMap.newKeySet();
-        final Map<String, Integer> mitreTechniqueCounts = new ConcurrentHashMap<>();
+        final AtomicInteger simulatedTamperCount = new AtomicInteger(0);
 
-        volatile String lastChainedRoot = "GENESIS";
-        volatile boolean simRunning = false;
-        volatile String simCurrentStage = "IDLE";
+        final AtomicLong lastBenchDurationMs = new AtomicLong(0);
+        final AtomicInteger lastBenchEps = new AtomicInteger(0);
+        final AtomicInteger lastBenchCount = new AtomicInteger(0);
 
-        final Object ledgerLock = new Object();
+        String lastChainedRoot = MerkleEngine.sha256("GENESIS_BLOCK_CYBERGUARD");
+        final AtomicBoolean simRunning = new AtomicBoolean(false);
+        ScheduledExecutorService simScheduler = Executors.newSingleThreadScheduledExecutor();
+
+        static final int BATCH_CAPACITY = 50;
+        static final int CORRELATION_WINDOW_SECONDS = 180;
 
         LogEvent ingest(String raw) {
-            LogEvent e = new LogEvent();
-            e.id = "EVT_" + eventCounter.incrementAndGet();
-            e.rawText = raw.trim();
-            e.timestampMillis = System.currentTimeMillis();
-            e.format = FormatAdapter.detect(raw);
-            detectedFormats.add(e.format);
+            LogEvent ev = new LogEvent();
+            ev.id = "EV-" + eventCounter.incrementAndGet();
+            ev.timestampMillis = System.currentTimeMillis();
+            ev.raw = raw;
+            ev.format = detectFormat(raw);
+            ev.sourceIp = Masker.extractIp(raw);
+            ev.destPort = Masker.extractPort(raw);
+            ev.serviceType = Masker.extractService(raw);
+            ev.masked = Masker.mask(raw);
 
-            e.maskedText = Masker.mask(e.rawText);
+            Object[] dm = drain.match(ev.masked);
+            ev.templateId = (String) dm[0];
+            ev.template = (String) dm[1];
+            ev.isNovelTemplate = (Boolean) dm[2];
 
-            Object[] tmpl = drainTree.match(e.maskedText);
-            e.templateId = (String) tmpl[0];
-            e.templateText = (String) tmpl[1];
-            e.templateIsNovel = (Boolean) tmpl[2];
+            String[] mc = MitreClassifier.classify(raw + " " + ev.template);
+            ev.mitreTacticId = mc[0];
+            ev.mitreTacticName = mc[1];
+            ev.mitreTechniqueId = mc[2];
+            ev.mitreTechniqueName = mc[3];
+            ev.killChainOrder = Integer.parseInt(mc[4]);
 
-            e.sourceIp = Masker.extractIp(e.rawText);
-            e.destPort = Masker.extractPort(e.rawText);
-            e.serviceType = Masker.extractService(e.rawText);
+            ev.leafHash = MerkleEngine.sha256(ev.raw + "|" + ev.timestampMillis + "|" + ev.templateId);
 
-            Object[] mitre = MitreClassifier.classify(e.rawText.toLowerCase());
-            e.mitreTactic = (String) mitre[0];
-            e.mitreTacticId = (String) mitre[1];
-            e.mitreTechnique = (String) mitre[2];
-            e.mitreTechniqueId = (String) mitre[3];
-            e.killChainOrder = (Integer) mitre[4];
+            eventsById.put(ev.id, ev);
+            eventsByLeaf.put(ev.leafHash, ev);
 
-            if (!e.mitreTechniqueId.isEmpty() && !"UNCLASSIFIED".equals(e.mitreTechniqueId)) {
-                mitreTechniqueCounts.merge(e.mitreTechniqueId, 1, Integer::sum);
+            synchronized (currentBatchLeaves) {
+                currentBatchLeaves.add(ev);
+                if (currentBatchLeaves.size() >= BATCH_CAPACITY) {
+                    sealBatch();
+                }
             }
+            return ev;
+        }
 
-            // Invariant: SHA-256 is strictly computed over original raw input bytes
-            e.leafHash = sha256Hex(e.rawText);
-
-            eventsById.put(e.id, e);
-            eventsByHash.put(e.leafHash, e);
-            pendingBuffer.add(e);
-
-            if (pendingBuffer.size() >= BATCH_SIZE) sealBatch();
-            return e;
+        String detectFormat(String raw) {
+            if (raw.startsWith("CEF:")) return "CEF";
+            if (raw.startsWith("LEEF:")) return "LEEF";
+            if (raw.startsWith("{") && raw.endsWith("}")) return "JSON";
+            if (raw.startsWith("<") && raw.endsWith(">")) return "XML";
+            if (raw.matches("^[a-zA-Z]{3}\\s+\\d+.*")) return "SYSLOG";
+            return "CSV";
         }
 
         synchronized Batch sealBatch() {
-            if (pendingBuffer.isEmpty()) return null;
+            if (currentBatchLeaves.isEmpty()) return null;
             Batch b = new Batch();
-            b.batchId = "BATCH_" + batchCounter.incrementAndGet();
-            synchronized (pendingBuffer) {
-                b.events.addAll(pendingBuffer);
-                pendingBuffer.clear();
-            }
-            b.merkleRoot = MerkleBuilder.build(b.events);
-            b.chainedRoot = sha256Hex(b.merkleRoot + lastChainedRoot);
-            b.sealedAtMillis = System.currentTimeMillis();
-            lastChainedRoot = b.chainedRoot;
+            b.batchId = "BATCH-" + batchCounter.incrementAndGet();
+            b.timestampMillis = System.currentTimeMillis();
 
-            for (int i = 0; i < b.events.size(); i++) {
-                LogEvent e = b.events.get(i);
+            for (LogEvent e : currentBatchLeaves) {
                 e.batchId = b.batchId;
-                e.leafIndexInBatch = i;
+                b.leafHashes.add(e.leafHash);
             }
+
+            b.merkleRoot = MerkleEngine.buildRoot(b.leafHashes);
+            b.chainedRoot = MerkleEngine.sha256(lastChainedRoot + "|" + b.merkleRoot);
+            lastChainedRoot = b.chainedRoot;
+            b.isSealed = true;
+
             sealedBatches.add(b);
-            appendLedger(b);
+            currentBatchLeaves.clear();
+
+            appendWal(b);
             return b;
         }
 
-        void appendLedger(Batch b) {
-            synchronized (ledgerLock) {
-                try (BufferedWriter w = Files.newBufferedWriter(
-                        LEDGER_FILE, StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-                    w.write(b.batchId + "\t" + b.merkleRoot + "\t" + b.chainedRoot
-                            + "\t" + b.sealedAtMillis + "\t" + b.events.size());
-                    w.newLine();
-                } catch (IOException ex) {
-                    System.err.println("[!] Ledger write failed: " + ex.getMessage());
-                }
+        void appendWal(Batch b) {
+            try (PrintWriter pw = new PrintWriter(new FileWriter(ledgerFile, true))) {
+                pw.println(b.batchId + "|" + b.timestampMillis + "|" + b.merkleRoot + "|" + b.chainedRoot + "|" + b.leafHashes.size());
+            } catch (IOException e) {
+                System.err.println("WAL append failed: " + e.getMessage());
             }
         }
 
-        void loadLedger() {
-            if (!Files.exists(LEDGER_FILE)) return;
-            try {
-                List<String> lines = Files.readAllLines(LEDGER_FILE, StandardCharsets.UTF_8);
-                for (String line : lines) {
-                    String[] parts = line.split("\t");
-                    if (parts.length >= 3) {
-                        lastChainedRoot = parts[2];
-                    }
-                }
-                System.out.println("[+] Loaded " + lines.size() + " ledger rows. Tip: " + lastChainedRoot.substring(0, Math.min(16, lastChainedRoot.length())) + "...");
-            } catch (Exception e) {
-                System.err.println("[!] Ledger recovery error: " + e.getMessage());
-            }
-        }
-
-        int calculateThreatScore() {
-            Set<Integer> activeStages = new HashSet<>();
+        int calculateKillChainRiskScore() {
+            Set<Integer> hitStages = new HashSet<>();
             for (LogEvent e : eventsById.values()) {
-                if (e.killChainOrder > 0) activeStages.add(e.killChainOrder);
+                if (e.killChainOrder > 0) hitStages.add(e.killChainOrder);
             }
-            int count = activeStages.size();
-            if (count == 1) return 25;
-            if (count == 2) return 55;
-            if (count == 3) return 78;
-            if (count >= 4) return 96;
-            return 0;
+            int score = hitStages.size() * 15;
+            if (hitStages.contains(1) && hitStages.contains(3)) score += 15;
+            if (hitStages.contains(3) && hitStages.contains(4)) score += 15;
+            if (hitStages.contains(4) && hitStages.contains(6)) score += 20;
+            return Math.min(100, score);
         }
 
         List<Map<String, Object>> buildGraphEdges(List<LogEvent> events) {
@@ -555,412 +477,512 @@ public class Main {
             }
             return edges;
         }
+
+        Map<String, Object> runLoadBenchmark(int eventCount) {
+            String[] testTemplates = {
+                    "CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=192.168.1.50 dst=10.0.0.1 proto=TCP dpt=80",
+                    "Sep 10 12:00:00 server sshd[102]: Failed password for root from 192.168.1.50 port 44102 ssh2",
+                    "LEEF:2.0|IBM|QRadar|7.3|1001|src=192.168.1.50\tdst=10.0.0.5\tsev=6\tcat=AUTH_FAIL",
+                    "{\"timestamp\":\"2026-09-10T12:00:00Z\",\"src\":\"192.168.1.50\",\"service\":\"sudo\",\"action\":\"root_attempt\"}",
+                    "<event><src>192.168.1.50</src><dst>203.0.113.10</dst><bytes>1048576</bytes><type>EXFIL</type></event>",
+                    "192.168.1.50,10.0.0.1,443,TCP,ALLOW,FLOW_RECORD"
+            };
+
+            long startNano = System.nanoTime();
+            int batchesBefore = sealedBatches.size();
+
+            for (int i = 0; i < eventCount; i++) {
+                String line = testTemplates[i % testTemplates.length] + " iter=" + i;
+                ingest(line);
+            }
+            sealBatch();
+
+            long elapsedMs = (System.nanoTime() - startNano) / 1_000_000;
+            if (elapsedMs == 0) elapsedMs = 1;
+            int calculatedEps = (int) ((eventCount * 1000L) / elapsedMs);
+            int batchesSealed = sealedBatches.size() - batchesBefore;
+
+            lastBenchDurationMs.set(elapsedMs);
+            lastBenchEps.set(calculatedEps);
+            lastBenchCount.set(eventCount);
+
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("eventsProcessed", eventCount);
+            res.put("elapsedMs", elapsedMs);
+            res.put("throughputEps", calculatedEps);
+            res.put("batchesCommitted", batchesSealed);
+            res.put("avgBatchLatencyMs", (double) elapsedMs / Math.max(1, batchesSealed));
+            res.put("chainTip", lastChainedRoot);
+            return res;
+        }
+
+        Map<String, Object> generateMlTensorPayload() {
+            List<LogEvent> events = new ArrayList<>(eventsById.values());
+            int start = Math.max(0, events.size() - 50);
+            List<LogEvent> workingSet = events.subList(start, events.size());
+
+            Map<String, Integer> idToIndex = new HashMap<>();
+            List<List<Double>> xFeatures = new ArrayList<>();
+
+            for (int i = 0; i < workingSet.size(); i++) {
+                LogEvent e = workingSet.get(i);
+                idToIndex.put(e.id, i);
+
+                double stageNorm = e.killChainOrder / 7.0;
+                double portNorm = 0.0;
+                try {
+                    portNorm = Math.min(1.0, Double.parseDouble(e.destPort) / 65535.0);
+                } catch (Exception ignored) {}
+
+                double serviceHash = (Math.abs(e.serviceType.hashCode()) % 100) / 100.0;
+                double novelVal = e.isNovelTemplate ? 1.0 : 0.0;
+                double entropy = Math.min(1.0, (double) e.template.length() / 80.0);
+
+                xFeatures.add(List.of(stageNorm, portNorm, serviceHash, novelVal, entropy));
+            }
+
+            List<Map<String, Object>> edges = buildGraphEdges(workingSet);
+            List<Integer> edgeSources = new ArrayList<>();
+            List<Integer> edgeTargets = new ArrayList<>();
+
+            for (Map<String, Object> edge : edges) {
+                String src = (String) edge.get("source");
+                String dst = (String) edge.get("target");
+                if (idToIndex.containsKey(src) && idToIndex.containsKey(dst)) {
+                    edgeSources.add(idToIndex.get(src));
+                    edgeTargets.add(idToIndex.get(dst));
+                }
+            }
+
+            Map<String, Object> tensor = new LinkedHashMap<>();
+            tensor.put("tensorFormat", "PyTorch-Geometric / DGL COO Graph Representation");
+            tensor.put("numNodes", workingSet.size());
+            tensor.put("numEdges", edgeSources.size());
+            tensor.put("featureDimensions", 5);
+            tensor.put("featureSchema", List.of("kill_chain_stage", "port_normalized", "service_hash", "template_is_novel", "leaf_entropy"));
+            tensor.put("x_node_features", xFeatures);
+            tensor.put("edge_index", List.of(edgeSources, edgeTargets));
+            tensor.put("generatedAt", Instant.now().toString());
+            return tensor;
+        }
     }
 
     // ============================================================
-    // JSON & HTTP Helpers
+    // HTTP Server & Controllers
     // ============================================================
-    static void sendJson(HttpExchange ex, int status, Object body) throws IOException {
-        byte[] bytes = Json.write(body).getBytes(StandardCharsets.UTF_8);
-        ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+    public static void main(String[] args) throws IOException {
+        Engine engine = new Engine();
+        int port = 8080;
+        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+
+        server.createContext("/", new StaticHandler());
+        server.createContext("/api/parse", new ParseHandler(engine));
+        server.createContext("/api/anchor", new AnchorHandler(engine));
+        server.createContext("/api/verify", new VerifyHandler(engine));
+        server.createContext("/api/tamper-simulate", new TamperHandler(engine));
+        server.createContext("/api/provenance-graph", new GraphHandler(engine));
+        server.createContext("/api/mitre-matrix", new MitreHandler(engine));
+        server.createContext("/api/status", new StatusHandler(engine));
+        server.createContext("/api/simulate-attack", new AttackSimHandler(engine));
+        server.createContext("/api/benchmark", new BenchmarkHandler(engine));
+        server.createContext("/api/ml-export", new MlExportHandler(engine));
+        server.createContext("/api/evidence-bundle", new EvidenceBundleHandler(engine));
+        server.createContext("/api/reset", new ResetHandler(engine));
+
+        server.setExecutor(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()));
+        server.start();
+
+        System.out.println("==================================================================");
+        System.out.println("  LogAnchor-X Core Substrate Online");
+        System.out.println("  Air-Gapped Sovereign Ingestion Active");
+        System.out.println("  Console: http://localhost:" + port);
+        System.out.println("==================================================================");
+    }
+
+    static void sendJson(HttpExchange ex, int code, String json) throws IOException {
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        ex.sendResponseHeaders(status, bytes.length);
+        ex.sendResponseHeaders(code, bytes.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
 
     static String readBody(HttpExchange ex) throws IOException {
-        try (InputStream is = ex.getRequestBody()) {
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     }
 
-    static Map<String, String> queryParams(HttpExchange ex) {
-        Map<String, String> params = new HashMap<>();
-        String query = ex.getRequestURI().getQuery();
-        if (query == null) return params;
-        for (String pair : query.split("&")) {
-            int eq = pair.indexOf('=');
-            if (eq > 0) {
-                params.put(URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
-                        URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
-            }
-        }
-        return params;
-    }
-
-    static String extractJsonField(String json, String key) {
-        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
-        return m.find() ? m.group(1) : null;
-    }
-
-    static class Json {
-        static String write(Object o) {
-            StringBuilder sb = new StringBuilder();
-            writeVal(o, sb);
-            return sb.toString();
-        }
-        @SuppressWarnings("unchecked")
-        static void writeVal(Object o, StringBuilder sb) {
-            if (o == null) { sb.append("null"); return; }
-            if (o instanceof String) { sb.append('"').append(escape((String) o)).append('"'); return; }
-            if (o instanceof Number || o instanceof Boolean) { sb.append(o.toString()); return; }
-            if (o instanceof Map) {
-                sb.append('{');
-                boolean first = true;
-                for (Map.Entry<String, Object> en : ((Map<String, Object>) o).entrySet()) {
-                    if (!first) sb.append(',');
-                    first = false;
-                    sb.append('"').append(escape(en.getKey())).append("\":");
-                    writeVal(en.getValue(), sb);
-                }
-                sb.append('}');
-                return;
-            }
-            if (o instanceof Collection) {
-                sb.append('[');
-                boolean first = true;
-                for (Object item : (Collection<?>) o) {
-                    if (!first) sb.append(',');
-                    first = false;
-                    writeVal(item, sb);
-                }
-                sb.append(']');
-                return;
-            }
-            sb.append('"').append(escape(o.toString())).append('"');
-        }
-        static String escape(String s) {
-            StringBuilder sb = new StringBuilder();
-            for (char c : s.toCharArray()) {
-                switch (c) {
-                    case '"': sb.append("\\\""); break;
-                    case '\\': sb.append("\\\\"); break;
-                    case '\n': sb.append("\\n"); break;
-                    case '\r': sb.append("\\r"); break;
-                    case '\t': sb.append("\\t"); break;
-                    default:
-                        if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
-                        else sb.append(c);
-                }
-            }
-            return sb.toString();
-        }
-    }
-
-    // ============================================================
-    // HTTP Handlers (Integrated With Front-End Contracts)
-    // ============================================================
+    // Static Resource
     static class StaticHandler implements HttpHandler {
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            InputStream is = Main.class.getClassLoader().getResourceAsStream("index.html");
-            if (is == null) {
-                byte[] msg = "404 index.html not found in classpath".getBytes(StandardCharsets.UTF_8);
-                ex.sendResponseHeaders(404, msg.length);
-                try (OutputStream os = ex.getResponseBody()) { os.write(msg); }
-                return;
+            try (InputStream is = getClass().getResourceAsStream("/index.html")) {
+                if (is == null) {
+                    byte[] err = "<html><body><h1>index.html not found</h1></body></html>".getBytes(StandardCharsets.UTF_8);
+                    ex.sendResponseHeaders(404, err.length);
+                    ex.getResponseBody().write(err);
+                    return;
+                }
+                byte[] html = is.readAllBytes();
+                ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                ex.sendResponseHeaders(200, html.length);
+                try (OutputStream os = ex.getResponseBody()) { os.write(html); }
             }
-            byte[] bytes = is.readAllBytes();
-            ex.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-            ex.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
         }
     }
 
+    // Parse Handler
     static class ParseHandler implements HttpHandler {
         final Engine engine;
-        ParseHandler(Engine engine) { this.engine = engine; }
+        ParseHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); return; }
-            String body = readBody(ex);
-            String raw = extractJsonField(body, "log");
-            if (raw == null || raw.isEmpty()) raw = body.trim();
-            if (raw.isEmpty()) { sendJson(ex, 400, Map.of("error", "missing log payload")); return; }
-            LogEvent e = engine.ingest(raw);
-            sendJson(ex, 200, e.toJson());
+            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{}"); return; }
+            String b = readBody(ex);
+            String log = "";
+            int idx = b.indexOf("\"log\":");
+            if (idx != -1) {
+                int start = b.indexOf("\"", idx + 6) + 1;
+                int end = b.lastIndexOf("\"");
+                if (start > 0 && end > start) log = b.substring(start, end);
+            }
+            if (log.isEmpty()) log = b;
+
+            LogEvent ev = engine.ingest(log);
+            sendJson(ex, 200, String.format(
+                    "{\"id\":\"%s\",\"leafHash\":\"%s\",\"format\":\"%s\",\"templateId\":\"%s\",\"template\":\"%s\",\"mitreTactic\":\"%s\",\"mitreTechnique\":\"%s\"}",
+                    ev.id, ev.leafHash, ev.format, ev.templateId, escape(ev.template), ev.mitreTacticName, ev.mitreTechniqueName
+            ));
         }
     }
 
+    // Benchmark Handler
+    static class BenchmarkHandler implements HttpHandler {
+        final Engine engine;
+        BenchmarkHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            int count = 5000;
+            String b = readBody(ex);
+            if (b.contains("\"count\":")) {
+                try {
+                    String num = b.replaceAll("[^0-9]", "");
+                    if (!num.isEmpty()) count = Integer.parseInt(num);
+                } catch (Exception ignored) {}
+            }
+            Map<String, Object> res = engine.runLoadBenchmark(count);
+            sendJson(ex, 200, toJson(res));
+        }
+    }
+
+    // ML Tensor Export
+    static class MlExportHandler implements HttpHandler {
+        final Engine engine;
+        MlExportHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            Map<String, Object> payload = engine.generateMlTensorPayload();
+            sendJson(ex, 200, toJson(payload));
+        }
+    }
+
+    // Evidence Bundle Exporter
+    static class EvidenceBundleHandler implements HttpHandler {
+        final Engine engine;
+        EvidenceBundleHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            Map<String, Object> bundle = new LinkedHashMap<>();
+            bundle.put("bundleType", "COURT_ADMISSIBLE_FORENSIC_LEDGER");
+            bundle.put("organization", "NTRO_CYBER_DEFENSE_SUBSTRATE");
+            bundle.put("exportedAt", Instant.now().toString());
+            bundle.put("totalBatches", engine.sealedBatches.size());
+            bundle.put("latestChainedRoot", engine.lastChainedRoot);
+
+            List<Map<String, Object>> batchList = new ArrayList<>();
+            for (Batch b : engine.sealedBatches) {
+                Map<String, Object> bm = new LinkedHashMap<>();
+                bm.put("batchId", b.batchId);
+                bm.put("timestamp", b.timestampMillis);
+                bm.put("merkleRoot", b.merkleRoot);
+                bm.put("chainedRoot", b.chainedRoot);
+                bm.put("leafCount", b.leafHashes.size());
+                batchList.add(bm);
+            }
+            bundle.put("batches", batchList);
+            sendJson(ex, 200, toJson(bundle));
+        }
+    }
+
+    // Anchor Handler
+    static class AnchorHandler implements HttpHandler {
+        final Engine engine;
+        AnchorHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            Batch b = engine.sealBatch();
+            if (b == null) {
+                sendJson(ex, 200, "{\"status\":\"NOOP\",\"message\":\"Batch queue is empty\"}");
+                return;
+            }
+            sendJson(ex, 200, String.format(
+                    "{\"batchId\":\"%s\",\"merkleRoot\":\"%s\",\"chainedRoot\":\"%s\",\"leavesAnchored\":%d}",
+                    b.batchId, b.merkleRoot, b.chainedRoot, b.leafHashes.size()
+            ));
+        }
+    }
+
+    // Verify Handler
     static class VerifyHandler implements HttpHandler {
         final Engine engine;
-        VerifyHandler(Engine engine) { this.engine = engine; }
+        VerifyHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            Map<String, String> q = queryParams(ex);
-            String leaf = q.get("leafHash");
-            LogEvent e = leaf == null ? null : engine.eventsByHash.get(leaf);
+            String query = ex.getRequestURI().getQuery();
+            String targetLeaf = "";
+            if (query != null && query.contains("leafHash=")) {
+                targetLeaf = query.split("leafHash=")[1].split("&")[0];
+            }
 
-            if (e == null) { sendJson(ex, 404, Map.of("valid", false, "message", "Leaf hash not found in session.")); return; }
-            if (e.batchId == null) { sendJson(ex, 409, Map.of("valid", false, "message", "Event not yet anchored in a batch. Click 'Seal Batch'.")); return; }
+            Batch foundBatch = null;
+            for (Batch b : engine.sealedBatches) {
+                if (b.leafHashes.contains(targetLeaf)) {
+                    foundBatch = b;
+                    break;
+                }
+            }
 
-            Batch b = engine.sealedBatches.stream().filter(batch -> batch.batchId.equals(e.batchId)).findFirst().orElse(null);
-            if (b == null) { sendJson(ex, 404, Map.of("valid", false, "message", "Batch not found in memory.")); return; }
-
-            String recomputed = MerkleBuilder.recomputeRoot(e.leafHash, e.merkleSiblingPath);
-            boolean valid = recomputed.equals(b.merkleRoot);
-            if (valid) engine.integrityChecksPassed.incrementAndGet();
-
-            Map<String, Object> resp = new LinkedHashMap<>();
-            resp.put("valid", valid);
-            resp.put("leafHash", e.leafHash);
-            resp.put("batchId", b.batchId);
-            resp.put("recomputedRoot", recomputed);
-            resp.put("anchoredRoot", b.merkleRoot);
-            resp.put("chainedRoot", b.chainedRoot);
-            resp.put("proofPath", e.merkleSiblingPath);
-            resp.put("message", valid ? "Cryptographic proof validated against anchored Merkle root." : "Tamper detected!");
-            sendJson(ex, 200, resp);
-        }
-    }
-
-    static class TamperHandler implements HttpHandler {
-        final Engine engine;
-        TamperHandler(Engine engine) { this.engine = engine; }
-        public void handle(HttpExchange ex) throws IOException {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); return; }
-            String body = readBody(ex);
-            String leaf = extractJsonField(body, "leafHash");
-            LogEvent e = leaf == null ? null : engine.eventsByHash.get(leaf);
-
-            if (e == null || e.batchId == null) {
-                sendJson(ex, 404, Map.of("valid", false, "message", "Event not found or not yet anchored in a sealed batch."));
+            if (foundBatch == null) {
+                sendJson(ex, 200, "{\"valid\":false,\"message\":\"Leaf not found in any sealed batch\"}");
                 return;
             }
 
-            Batch b = engine.sealedBatches.stream().filter(batch -> batch.batchId.equals(e.batchId)).findFirst().orElse(null);
+            MerkleProof p = MerkleEngine.generateProof(foundBatch.leafHashes, targetLeaf);
+            boolean verified = MerkleEngine.verifyProof(targetLeaf, p.auditPath, p.directions, foundBatch.merkleRoot);
 
-            // Sandboxed: Flip 1 char in memory only, real ledger pristine
-            char[] chars = e.rawText.toCharArray();
-            int mid = chars.length / 2;
-            chars[mid] = (char) (chars[mid] == 'X' ? 'Y' : 'X');
-            String tamperedRaw = new String(chars);
-            String tamperedLeaf = sha256Hex(tamperedRaw);
-
-            String recomputed = MerkleBuilder.recomputeRoot(tamperedLeaf, e.merkleSiblingPath);
-
-            Map<String, Object> resp = new LinkedHashMap<>();
-            resp.put("valid", false);
-            resp.put("originalLeafHash", e.leafHash);
-            resp.put("tamperedLeafHash", tamperedLeaf);
-            resp.put("batchId", b.batchId);
-            resp.put("recomputedRoot", recomputed);
-            resp.put("anchoredRoot", b.merkleRoot);
-            resp.put("proofPath", e.merkleSiblingPath);
-            resp.put("message", "INTEGRITY VIOLATION DETECTED: 1-bit scratch mutation broke Merkle root recomputation.");
-            sendJson(ex, 200, resp);
+            sendJson(ex, 200, String.format(
+                    "{\"valid\":%b,\"batchId\":\"%s\",\"recomputedRoot\":\"%s\",\"anchoredRoot\":\"%s\",\"message\":\"%s\"}",
+                    verified, foundBatch.batchId, p.rootHash, foundBatch.merkleRoot,
+                    verified ? "O(log N) Cryptographic Audit Validated" : "Tampering Detected"
+            ));
         }
     }
 
-    static class MitreMatrixHandler implements HttpHandler {
+    // Tamper Simulator Handler
+    static class TamperHandler implements HttpHandler {
         final Engine engine;
-        MitreMatrixHandler(Engine engine) { this.engine = engine; }
+        TamperHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            List<Map<String, Object>> tacticsList = new ArrayList<>();
-            for (String[] t : MitreClassifier.MITRE_14_TACTICS) {
-                Map<String, Object> tacObj = new LinkedHashMap<>();
-                tacObj.put("id", t[0]);
-                tacObj.put("name", t[1]);
-
-                List<Map<String, Object>> techList = new ArrayList<>();
-                switch (t[0]) {
-                    case "TA0043": techList.add(techItem("T1046", "Network Service Discovery")); break;
-                    case "TA0001": techList.add(techItem("T1190", "Exploit Public-Facing App")); break;
-                    case "TA0002": techList.add(techItem("T1059", "Command & Scripting")); break;
-                    case "TA0003": techList.add(techItem("T1053", "Scheduled Task/Job")); break;
-                    case "TA0004": techList.add(techItem("T1078", "Valid Accounts")); break;
-                    case "TA0006": techList.add(techItem("T1110", "Brute Force")); break;
-                    case "TA0008": techList.add(techItem("T1021", "Remote Services")); break;
-                    case "TA0010": techList.add(techItem("T1041", "Exfiltration Over C2")); break;
-                }
-                tacObj.put("techniques", techList);
-                tacticsList.add(tacObj);
+            String b = readBody(ex);
+            String leaf = "";
+            int idx = b.indexOf("\"leafHash\":");
+            if (idx != -1) {
+                int start = b.indexOf("\"", idx + 11) + 1;
+                int end = b.indexOf("\"", start);
+                if (start > 0 && end > start) leaf = b.substring(start, end);
             }
 
-            Map<String, Object> unclass = new LinkedHashMap<>();
-            unclass.put("id", "UNCLASSIFIED");
-            unclass.put("name", "Novel / Unclassified");
-            unclass.put("techniques", List.of(techItem("UNCLASSIFIED", "Unknown Pattern")));
-            tacticsList.add(unclass);
-
-            sendJson(ex, 200, Map.of("tactics", tacticsList, "totalTechniquesDetected", engine.mitreTechniqueCounts.size()));
-        }
-
-        private Map<String, Object> techItem(String id, String name) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", id);
-            m.put("name", name);
-            m.put("count", engine.mitreTechniqueCounts.getOrDefault(id, 0));
-            return m;
-        }
-    }
-
-    static class LogsByTechniqueHandler implements HttpHandler {
-        final Engine engine;
-        LogsByTechniqueHandler(Engine engine) { this.engine = engine; }
-        public void handle(HttpExchange ex) throws IOException {
-            Map<String, String> q = queryParams(ex);
-            String techId = q.get("techniqueId");
-
-            List<Map<String, Object>> matched = new ArrayList<>();
-            for (LogEvent e : engine.eventsById.values()) {
-                if (techId == null || techId.isEmpty() || e.mitreTechniqueId.equalsIgnoreCase(techId)) {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("ts", e.timestampMillis);
-                    m.put("raw", e.rawText);
-                    m.put("leafHash", e.leafHash);
-                    m.put("mitreId", e.mitreTechniqueId);
-                    m.put("mitreTechnique", e.mitreTechnique);
-                    m.put("tactic", e.mitreTactic);
-                    matched.add(m);
-                    if (matched.size() >= 30) break;
+            Batch foundBatch = null;
+            for (Batch batch : engine.sealedBatches) {
+                if (batch.leafHashes.contains(leaf)) {
+                    foundBatch = batch;
+                    break;
                 }
             }
-            sendJson(ex, 200, Map.of("techniqueId", techId != null ? techId : "ALL", "matchedCount", matched.size(), "events", matched));
+
+            if (foundBatch == null) {
+                sendJson(ex, 200, "{\"valid\":false,\"message\":\"Target leaf not in sealed batch to tamper\"}");
+                return;
+            }
+
+            int leafIdx = foundBatch.leafHashes.indexOf(leaf);
+            String tampered = MerkleEngine.sha256(leaf + "_CORRUPTED_BY_ATTACKER");
+            foundBatch.leafHashes.set(leafIdx, tampered);
+            engine.simulatedTamperCount.incrementAndGet();
+
+            String newRoot = MerkleEngine.buildRoot(foundBatch.leafHashes);
+
+            sendJson(ex, 200, String.format(
+                    "{\"valid\":false,\"batchId\":\"%s\",\"recomputedRoot\":\"%s\",\"anchoredRoot\":\"%s\",\"message\":\"CRITICAL: Sibling Path Hash Mismatch!\"}",
+                    foundBatch.batchId, newRoot, foundBatch.merkleRoot
+            ));
         }
     }
 
-    static class ProvenanceGraphHandler implements HttpHandler {
+    // Provenance Graph Handler
+    static class GraphHandler implements HttpHandler {
         final Engine engine;
-        ProvenanceGraphHandler(Engine engine) { this.engine = engine; }
+        GraphHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
             List<LogEvent> events = new ArrayList<>(engine.eventsById.values());
             int start = Math.max(0, events.size() - 40);
             List<LogEvent> workingSet = events.subList(start, events.size());
 
-            List<Map<String, Object>> nodes = new ArrayList<>();
-            for (LogEvent e : workingSet) {
-                if ("UNCLASSIFIED".equalsIgnoreCase(e.mitreTechniqueId)) continue;
-                nodes.add(e.toJson());
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"nodes\":[");
+            for (int i = 0; i < workingSet.size(); i++) {
+                LogEvent ev = workingSet.get(i);
+                if (i > 0) sb.append(",");
+                sb.append(String.format(
+                        "{\"id\":\"%s\",\"raw\":\"%s\",\"sourceIp\":\"%s\",\"destPort\":\"%s\",\"service\":\"%s\",\"mitreId\":\"%s\",\"mitreTechnique\":\"%s\",\"stage\":%d,\"leafHash\":\"%s\"}",
+                        ev.id, escape(ev.raw), ev.sourceIp, ev.destPort, ev.serviceType, ev.mitreTechniqueId, escape(ev.mitreTechniqueName), ev.killChainOrder, ev.leafHash
+                ));
             }
-
+            sb.append("],\"edges\":[");
             List<Map<String, Object>> edges = engine.buildGraphEdges(workingSet);
-            sendJson(ex, 200, Map.of("nodes", nodes, "edges", edges, "totalNodes", nodes.size(), "totalEdges", edges.size()));
+            for (int i = 0; i < edges.size(); i++) {
+                if (i > 0) sb.append(",");
+                Map<String, Object> edge = edges.get(i);
+                sb.append(String.format("{\"source\":\"%s\",\"target\":\"%s\",\"confidence\":\"%s\",\"timeGapSec\":%s}",
+                        edge.get("source"), edge.get("target"), edge.get("confidence"), edge.get("timeGapSec")));
+            }
+            sb.append("]}");
+            sendJson(ex, 200, sb.toString());
         }
     }
 
-    static class EvidenceBundleHandler implements HttpHandler {
+    // MITRE ATT&CK Matrix Matrix Handler
+    static class MitreHandler implements HttpHandler {
         final Engine engine;
-        EvidenceBundleHandler(Engine engine) { this.engine = engine; }
+        MitreHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            List<Map<String, Object>> verifiedNodes = new ArrayList<>();
-            for (LogEvent e : engine.eventsById.values()) {
-                Map<String, Object> m = e.toJson();
-                m.put("siblingPath", e.merkleSiblingPath);
-                verifiedNodes.add(m);
+            Map<String, AtomicInteger> techniqueCounts = new HashMap<>();
+            for (LogEvent ev : engine.eventsById.values()) {
+                techniqueCounts.computeIfAbsent(ev.mitreTechniqueId, k -> new AtomicInteger(0)).incrementAndGet();
             }
 
-            Map<String, Object> bundle = new LinkedHashMap<>();
-            bundle.put("manifestType", "LogAnchor-X Forensic Evidence Bundle");
-            bundle.put("timestamp", System.currentTimeMillis());
-            bundle.put("chainTip", engine.lastChainedRoot);
-            bundle.put("totalBatchesAnchored", engine.sealedBatches.size());
-            bundle.put("nodesWithCryptographicProofs", verifiedNodes);
+            StringBuilder sb = new StringBuilder("{\"tactics\":[");
+            for (int i = 0; i < MitreClassifier.MITRE_14_TACTICS.size(); i++) {
+                if (i > 0) sb.append(",");
+                String[] tac = MitreClassifier.MITRE_14_TACTICS.get(i);
+                sb.append(String.format("{\"id\":\"%s\",\"name\":\"%s\",\"techniques\":[", tac[0], tac[1]));
 
-            byte[] jsonBytes = Json.write(bundle).getBytes(StandardCharsets.UTF_8);
-            ex.getResponseHeaders().set("Content-Type", "application/json");
-            ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"loganchor_evidence_bundle.json\"");
-            ex.sendResponseHeaders(200, jsonBytes.length);
-            try (OutputStream os = ex.getResponseBody()) { os.write(jsonBytes); }
-        }
-    }
-
-    static class SimulateAttackHandler implements HttpHandler {
-        final Engine engine;
-        SimulateAttackHandler(Engine engine) { this.engine = engine; }
-
-        static final String[] SCRIPT = {
-                "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN",
-                "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2",
-                "Sep 10 14:00:20 auth-gw sshd[4012]: Failed password for invalid user admin from 10.0.0.77 port 41202 ssh2",
-                "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77",
-                "Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800"
-        };
-
-        public void handle(HttpExchange ex) throws IOException {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); return; }
-            String body = readBody(ex);
-            String action = extractJsonField(body, "action");
-
-            if ("stop".equalsIgnoreCase(action)) {
-                engine.simRunning = false;
-                engine.simCurrentStage = "STOPPED";
-                sendJson(ex, 200, Map.of("status", "stopped"));
-                return;
-            }
-
-            if (engine.simRunning) {
-                sendJson(ex, 200, Map.of("status", "already_running", "stage", engine.simCurrentStage));
-                return;
-            }
-
-            Thread t = new Thread(() -> {
-                engine.simRunning = true;
-                try {
-                    for (int i = 0; i < SCRIPT.length && engine.simRunning; i++) {
-                        engine.simCurrentStage = "STAGE " + (i + 1) + "/" + SCRIPT.length;
-                        engine.ingest(SCRIPT[i]);
-                        try { Thread.sleep(1300); } catch (InterruptedException ignored) {}
-                    }
-                    if (engine.simRunning) {
-                        engine.sealBatch();
-                        engine.simCurrentStage = "ATTACK CHAIN COMPLETE & ANCHORED";
-                    }
-                } finally {
-                    engine.simRunning = false;
+                List<MitreClassifier.Rule> matchingRules = new ArrayList<>();
+                for (MitreClassifier.Rule r : MitreClassifier.RULES) {
+                    if (r.tacticId.equals(tac[0])) matchingRules.add(r);
                 }
-            });
-            t.setDaemon(true);
-            t.start();
 
-            sendJson(ex, 200, Map.of("status", "started"));
+                for (int j = 0; j < matchingRules.size(); j++) {
+                    if (j > 0) sb.append(",");
+                    MitreClassifier.Rule r = matchingRules.get(j);
+                    int count = techniqueCounts.containsKey(r.techId) ? techniqueCounts.get(r.techId).get() : 0;
+                    sb.append(String.format("{\"id\":\"%s\",\"name\":\"%s\",\"count\":%d}", r.techId, r.techName, count));
+                }
+                sb.append("]}");
+            }
+            sb.append("]}");
+            sendJson(ex, 200, sb.toString());
         }
     }
 
-    static class AnchorHandler implements HttpHandler {
-        final Engine engine;
-        AnchorHandler(Engine engine) { this.engine = engine; }
-        public void handle(HttpExchange ex) throws IOException {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); return; }
-            Batch b = engine.sealBatch();
-            if (b == null) { sendJson(ex, 200, Map.of("error", "Buffer empty")); return; }
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("batchId", b.batchId);
-            m.put("merkleRoot", b.merkleRoot);
-            m.put("chainedRoot", b.chainedRoot);
-            m.put("leavesAnchored", b.events.size());
-            sendJson(ex, 200, m);
-        }
-    }
-
-    static class ResetHandler implements HttpHandler {
-        final Engine engine;
-        ResetHandler(Engine engine) { this.engine = engine; }
-        public void handle(HttpExchange ex) throws IOException {
-            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); return; }
-            engine.eventsById.clear();
-            engine.eventsByHash.clear();
-            engine.pendingBuffer.clear();
-            engine.mitreTechniqueCounts.clear();
-            engine.simRunning = false;
-            engine.simCurrentStage = "IDLE";
-            sendJson(ex, 200, Map.of("status", "reset_complete", "note", "Ledger remains intact."));
-        }
-    }
-
+    // Status Handler
     static class StatusHandler implements HttpHandler {
         final Engine engine;
-        StatusHandler(Engine engine) { this.engine = engine; }
+        StatusHandler(Engine e) { this.engine = e; }
+        @Override
         public void handle(HttpExchange ex) throws IOException {
-            Map<String, Object> st = new LinkedHashMap<>();
-            st.put("totalIngested", engine.eventsById.size());
-            st.put("pendingInBatch", engine.pendingBuffer.size());
-            st.put("batchesAnchored", engine.sealedBatches.size());
-            st.put("chainTip", engine.lastChainedRoot);
-            st.put("threatScore", engine.calculateThreatScore());
-            st.put("integrityChecksPassed", engine.integrityChecksPassed.get());
-            st.put("uniqueFormatsCount", engine.detectedFormats.size());
-            st.put("techniquesCount", engine.mitreTechniqueCounts.size());
-            st.put("simRunning", engine.simRunning);
-            st.put("simStage", engine.simCurrentStage);
-            sendJson(ex, 200, st);
+            int ingested = engine.eventCounter.get();
+            int sealed = engine.sealedBatches.size();
+            int detections = 0;
+            for (LogEvent ev : engine.eventsById.values()) {
+                if (ev.killChainOrder > 0) detections++;
+            }
+            int integrityAudits = engine.simulatedTamperCount.get();
+            int threatScore = engine.calculateKillChainRiskScore();
+
+            sendJson(ex, 200, String.format(
+                    "{\"ingested\":%d,\"sealedBatches\":%d,\"adaptersActive\":6,\"detections\":%d,\"validations\":%d,\"threatScore\":%d,\"lastChainedRoot\":\"%s\",\"benchEps\":%d,\"simRunning\":%b}",
+                    ingested, sealed, detections, integrityAudits, threatScore, engine.lastChainedRoot, engine.lastBenchEps.get(), engine.simRunning.get()
+            ));
+        }
+    }
+
+    // Attack Simulator
+    static class AttackSimHandler implements HttpHandler {
+        final Engine engine;
+        AttackSimHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            boolean active = engine.simRunning.get();
+            if (active) {
+                engine.simRunning.set(false);
+                sendJson(ex, 200, "{\"status\":\"HALTED\"}");
+            } else {
+                engine.simRunning.set(true);
+                runAttackScenario();
+                sendJson(ex, 200, "{\"status\":\"STARTED\"}");
+            }
+        }
+
+        void runAttackScenario() {
+            String[] scenario = {
+                    "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN",
+                    "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2",
+                    "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77",
+                    "Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800"
+            };
+
+            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
+            for (int i = 0; i < scenario.length; i++) {
+                final int idx = i;
+                exec.schedule(() -> {
+                    if (engine.simRunning.get()) {
+                        engine.ingest(scenario[idx]);
+                    }
+                }, i * 1200L, TimeUnit.MILLISECONDS);
+            }
+            exec.schedule(() -> {
+                engine.sealBatch();
+                engine.simRunning.set(false);
+            }, (scenario.length * 1200L) + 500L, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    // Reset Handler
+    static class ResetHandler implements HttpHandler {
+        final Engine engine;
+        ResetHandler(Engine e) { this.engine = e; }
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            engine.eventsById.clear();
+            engine.eventsByLeaf.clear();
+            engine.currentBatchLeaves.clear();
+            engine.simRunning.set(false);
+            sendJson(ex, 200, "{\"status\":\"RESET_COMPLETE\"}");
+        }
+    }
+
+    // Helper Serializers
+    static String escape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+    }
+
+    static String toJson(Object obj) {
+        if (obj instanceof Map<?, ?> map) {
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                if (!first) sb.append(",");
+                first = false;
+                sb.append("\"").append(e.getKey()).append("\":").append(toJson(e.getValue()));
+            }
+            sb.append("}");
+            return sb.toString();
+        } else if (obj instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(toJson(list.get(i)));
+            }
+            sb.append("]");
+            return sb.toString();
+        } else if (obj instanceof String str) {
+            return "\"" + escape(str) + "\"";
+        } else {
+            return String.valueOf(obj);
         }
     }
 }
