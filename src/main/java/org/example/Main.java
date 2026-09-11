@@ -161,6 +161,11 @@ public class Main {
             }
             return (double) match / a.size();
         }
+
+        void clear() {
+            tree.clear();
+            clusterCounter.set(0);
+        }
     }
 
     // ============================================================
@@ -414,6 +419,27 @@ public class Main {
             }
         }
 
+        synchronized void resetState() {
+            eventsById.clear();
+            eventsByLeaf.clear();
+            currentBatchLeaves.clear();
+            sealedBatches.clear();
+            drain.clear();
+            eventCounter.set(0);
+            batchCounter.set(0);
+            simulatedTamperCount.set(0);
+            lastBenchDurationMs.set(0);
+            lastBenchEps.set(0);
+            lastBenchCount.set(0);
+            lastChainedRoot = MerkleEngine.sha256("GENESIS_BLOCK_CYBERGUARD");
+            simRunning.set(false);
+            try {
+                java.nio.file.Files.deleteIfExists(ledgerFile.toPath());
+            } catch (IOException e) {
+                System.err.println("Ledger reset failed: " + e.getMessage());
+            }
+        }
+
         int calculateKillChainRiskScore() {
             Set<Integer> hitStages = new HashSet<>();
             for (LogEvent e : eventsById.values()) {
@@ -589,19 +615,22 @@ public class Main {
         server.createContext("/api/evidence-bundle", new EvidenceBundleHandler(engine));
         server.createContext("/api/reset", new ResetHandler(engine));
 
-        server.setExecutor(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()));
+        int poolSize = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
+        server.setExecutor(Executors.newFixedThreadPool(poolSize));
         server.start();
 
         System.out.println("==================================================================");
         System.out.println("  LogAnchor-X Core Substrate Online");
         System.out.println("  Air-Gapped Sovereign Ingestion Active");
         System.out.println("  Console: http://localhost:" + port);
+        System.out.println("  Bounded Thread Pool: " + poolSize + " workers | Air-Gap Ready");
         System.out.println("==================================================================");
     }
 
     static void sendJson(HttpExchange ex, int code, String json) throws IOException {
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.getResponseHeaders().set("Cache-Control", "no-store, no-cache, must-revalidate");
         ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         ex.sendResponseHeaders(code, bytes.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
@@ -893,8 +922,8 @@ public class Main {
             int threatScore = engine.calculateKillChainRiskScore();
 
             sendJson(ex, 200, String.format(
-                    "{\"ingested\":%d,\"sealedBatches\":%d,\"adaptersActive\":6,\"detections\":%d,\"validations\":%d,\"threatScore\":%d,\"lastChainedRoot\":\"%s\",\"benchEps\":%d,\"simRunning\":%b}",
-                    ingested, sealed, detections, integrityAudits, threatScore, engine.lastChainedRoot, engine.lastBenchEps.get(), engine.simRunning.get()
+                    "{\"ingested\":%d,\"totalIngested\":%d,\"sealedBatches\":%d,\"batchesAnchored\":%d,\"adaptersActive\":6,\"uniqueFormatsCount\":6,\"detections\":%d,\"validations\":%d,\"integrityChecksPassed\":%d,\"threatScore\":%d,\"lastChainedRoot\":\"%s\",\"chainTip\":\"%s\",\"benchEps\":%d,\"simRunning\":%b}",
+                    ingested, ingested, sealed, sealed, detections, integrityAudits, integrityAudits, threatScore, engine.lastChainedRoot, engine.lastChainedRoot, engine.lastBenchEps.get(), engine.simRunning.get()
             ));
         }
     }
@@ -905,6 +934,13 @@ public class Main {
         AttackSimHandler(Engine e) { this.engine = e; }
         @Override
         public void handle(HttpExchange ex) throws IOException {
+            String body = readBody(ex);
+            if (body.contains("\"action\":\"stop\"")) {
+                engine.simRunning.set(false);
+                sendJson(ex, 200, "{\"status\":\"stopped\"}");
+                return;
+            }
+
             boolean active = engine.simRunning.get();
             if (active) {
                 engine.simRunning.set(false);
@@ -934,8 +970,10 @@ public class Main {
                 }, i * 1200L, TimeUnit.MILLISECONDS);
             }
             exec.schedule(() -> {
-                engine.sealBatch();
-                engine.simRunning.set(false);
+                if (engine.simRunning.get()) {
+                    engine.sealBatch();
+                    engine.simRunning.set(false);
+                }
             }, (scenario.length * 1200L) + 500L, TimeUnit.MILLISECONDS);
         }
     }
@@ -946,10 +984,8 @@ public class Main {
         ResetHandler(Engine e) { this.engine = e; }
         @Override
         public void handle(HttpExchange ex) throws IOException {
-            engine.eventsById.clear();
-            engine.eventsByLeaf.clear();
-            engine.currentBatchLeaves.clear();
-            engine.simRunning.set(false);
+            if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{}"); return; }
+            engine.resetState();
             sendJson(ex, 200, "{\"status\":\"RESET_COMPLETE\"}");
         }
     }
