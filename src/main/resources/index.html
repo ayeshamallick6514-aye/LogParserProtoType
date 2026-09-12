@@ -822,7 +822,7 @@ function relayout(kick) {
     }
   });
 
-  if (kick === false && gfx.alpha <= 0.02) { drawGraph(); return; }
+  if (kick === false && gfx.alpha <= 0.02) return;
 
   gfx.alpha = 1;
   if (!gfx.anim) gfx.anim = requestAnimationFrame(step);
@@ -907,6 +907,16 @@ function drawGraph() {
   });
 
   svg.innerHTML = parts.join("");
+  Array.prototype.forEach.call(svg.querySelectorAll(".gnode"), function (gn) {
+    gn.addEventListener("click", function (e) {
+      if (gfx.moved) return;
+      var node = gfx.nodes.filter(function (candidate) {
+        return candidate.id === gn.dataset.id;
+      })[0];
+      if (node) selectLeaf(node.data.leafHash);
+      e.stopPropagation();
+    });
+  });
 }
 
 function renderNodeDetail(n) {
@@ -1190,20 +1200,23 @@ $("logInput").addEventListener("keydown", function (e) {
 /* Node dragging in the provenance graph. */
 (function () {
   var svg = $("graphSvg");
+  var dragStart = null;
   svg.addEventListener("mousedown", function (e) {
     var gn = e.target.closest(".gnode");
     if (!gn) return;
     var node = gfx.nodes.filter(function (n) { return n.id === gn.dataset.id; })[0];
     if (!node) return;
-    gfx.drag = node; gfx.moved = false; node.fixed = true;
+    gfx.drag = node; gfx.moved = false; dragStart = { x: e.clientX, y: e.clientY }; node.fixed = true;
     e.preventDefault();
   });
   window.addEventListener("mousemove", function (e) {
     if (!gfx.drag) return;
+    if (dragStart && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 4) {
+      gfx.moved = true;
+    }
     var r = svg.getBoundingClientRect();
     gfx.drag.x = Math.max(PAD, Math.min(gfx.w - PAD, e.clientX - r.left));
     gfx.drag.y = Math.max(PAD, Math.min(gfx.h - PAD, e.clientY - r.top));
-    gfx.moved = true;
     gfx.alpha = Math.max(gfx.alpha, 0.35);
     if (!gfx.anim) gfx.anim = requestAnimationFrame(step);
   });
@@ -1211,6 +1224,7 @@ $("logInput").addEventListener("keydown", function (e) {
     if (!gfx.drag) return;
     gfx.drag.fixed = false;
     gfx.drag = null;
+    dragStart = null;
     setTimeout(function () { gfx.moved = false; }, 0);
   });
 })();
