@@ -1,794 +1,1232 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>LogAnchor-X | Cryptographic Ingestion &amp; Provenance Substrate</title>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <style>
-        :root {
-          --bg: #080b0f;
-          --panel: #0d1117;
-          --panel-header: #161b22;
-          --border: #30363d;
-          --border-subtle: #21262d;
-          --text: #c9d1d9;
-          --text-muted: #8b949e;
-          --text-bright: #f0f6fc;
-          --accent: #58a6ff;
-          --green: #3fb950;
-          --red: #f85149;
-          --amber: #d29922;
-          --purple: #bc8cff;
-          --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-          font-family: var(--sans);
-          background: var(--bg);
-          color: var(--text);
-          font-size: 12px;
-          line-height: 1.4;
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-          -webkit-font-smoothing: antialiased;
-        }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LogAnchor-X &middot; Cryptographic Log Provenance</title>
+<style>
+  :root{
+    --bg:#0b0e13; --surface:#111620; --surface-2:#161c28; --surface-3:#1b2331;
+    --border:#222a38; --border-strong:#2f394a;
+    --text:#d7dee9; --muted:#8494ab; --dim:#5d6b80; --bright:#f2f6fc;
+    --accent:#4c8dff; --accent-dim:rgba(76,141,255,.12);
+    --green:#3fb27f; --green-dim:rgba(63,178,127,.12);
+    --red:#e5534b; --red-dim:rgba(229,83,75,.12);
+    --amber:#d9a441;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    --r:6px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--sans); background:var(--bg); color:var(--text);
+    font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+  }
+  ::selection{background:rgba(76,141,255,.3)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:5px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#3d4a5f}
 
-        header {
-          background: var(--panel);
-          border-bottom: 1px solid var(--border);
-          padding: 0 16px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .brand-section { display: flex; align-items: center; gap: 12px; }
-        .system-title { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--text-bright); }
-        .deployment-badge {
-          font-family: var(--mono);
-          font-size: 10px;
-          padding: 2px 6px;
-          background: rgba(88,166,255,0.1);
-          border: 1px solid rgba(88,166,255,0.25);
-          color: var(--accent);
-          border-radius: 2px;
-        }
-        .top-actions { display: flex; align-items: center; gap: 6px; }
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; gap:14px;
+    padding:0 20px; height:52px; flex:0 0 auto;
+    background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .mark{width:9px;height:9px;border-radius:2px;background:var(--accent);transform:rotate(45deg);flex:0 0 auto}
+  .brand{font-size:14px;font-weight:650;color:var(--bright);letter-spacing:-.01em}
+  .tag{
+    font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase;
+    padding:3px 7px; border-radius:4px; background:var(--accent-dim);
+    border:1px solid rgba(76,141,255,.22); color:var(--accent);
+  }
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .chaintip{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .chaintip b{font-weight:500;color:var(--muted)}
 
-        .kpi-strip {
-          background: var(--panel-header);
-          border-bottom: 1px solid var(--border);
-          display: flex;
-          height: 32px;
-          padding: 0 16px;
-          align-items: center;
-          font-family: var(--mono);
-          font-size: 11px;
-          gap: 20px;
-          color: var(--text-muted);
-        }
-        .kpi-metric { display: flex; gap: 6px; align-items: center; }
-        .kpi-num { color: var(--text-bright); font-weight: 600; }
-        .kpi-num.alert { color: var(--red); }
-        .kpi-num.ok { color: var(--green); }
-        .kpi-num.blue { color: var(--accent); }
+  /* ---------- kpi strip ---------- */
+  .kpis{
+    display:flex; align-items:stretch; flex:0 0 auto;
+    background:var(--surface-2); border-bottom:1px solid var(--border);
+    padding:0 20px; overflow-x:auto;
+  }
+  .kpi{
+    display:flex; flex-direction:column; gap:2px; justify-content:center;
+    padding:10px 22px 10px 0; margin-right:22px; min-width:78px;
+    border-right:1px solid var(--border); white-space:nowrap;
+  }
+  .kpi:last-child{border-right:0;margin-right:0;padding-right:0}
+  .kpi-label{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+  .kpi-val{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--bright);line-height:1.2}
+  .kpi-val.accent{color:var(--accent)} .kpi-val.red{color:var(--red)}
+  .kpi-val.green{color:var(--green)} .kpi-val.amber{color:var(--amber)}
+  .kpi-sub{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .kpi.sim{margin-left:auto;border-right:0;padding-right:0;align-items:flex-end}
+  .simdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--dim);margin-right:6px;vertical-align:middle}
+  .simdot.live{background:var(--red);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(229,83,75,.5)}50%{opacity:.65;box-shadow:0 0 0 5px rgba(229,83,75,0)}}
 
-        main {
-          flex: 1;
-          padding: 12px 16px 24px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          max-width: 1600px;
-          width: 100%;
-          margin: 0 auto;
-        }
+  /* ---------- tabs ---------- */
+  nav{
+    display:flex; gap:2px; flex:0 0 auto; padding:0 20px;
+    background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .tab{
+    appearance:none; background:none; border:0; cursor:pointer;
+    font-family:var(--sans); font-size:13px; color:var(--muted);
+    padding:11px 14px; border-bottom:2px solid transparent; margin-bottom:-1px;
+    transition:color .13s ease, border-color .13s ease;
+  }
+  .tab:hover{color:var(--text)}
+  .tab[aria-selected="true"]{color:var(--bright);border-bottom-color:var(--accent);font-weight:550}
+  .tab .count{
+    font-family:var(--mono);font-size:10px;color:var(--dim);
+    background:var(--surface-3);padding:1px 5px;border-radius:8px;margin-left:6px;
+  }
 
-        .grid-workbench {
-          display: grid;
-          grid-template-columns: 340px 1fr 380px;
-          gap: 12px;
-          height: 480px;
-        }
-        @media (max-width: 1200px) { .grid-workbench { grid-template-columns: 1fr; height: auto; } }
+  /* ---------- layout ---------- */
+  main{flex:1 1 auto;overflow-y:auto;padding:18px 20px 32px}
+  .view{display:none;max-width:1480px;margin:0 auto}
+  .view.active{display:block}
+  .cols{display:grid;gap:14px}
+  .cols.c2{grid-template-columns:minmax(0,380px) minmax(0,1fr)}
+  .cols.c2r{grid-template-columns:minmax(0,1fr) minmax(0,340px)}
+  .cols.auto{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+  @media(max-width:1080px){.cols.c2,.cols.c2r{grid-template-columns:minmax(0,1fr)}}
 
-        .panel {
-          background: var(--panel);
-          border: 1px solid var(--border);
-          border-radius: 3px;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        .panel-header {
-          background: var(--panel-header);
-          border-bottom: 1px solid var(--border);
-          padding: 7px 12px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-family: var(--mono);
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--text-bright);
-          text-transform: uppercase;
-        }
-        .panel-body {
-          padding: 10px;
-          flex: 1;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
+  /* ---------- card ---------- */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+  .card + .card{margin-top:14px}
+  .card-head{
+    display:flex;align-items:center;gap:10px;
+    padding:11px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);
+  }
+  .card-title{font-size:12px;font-weight:600;color:var(--bright);letter-spacing:.01em}
+  .card-note{font-size:11px;color:var(--dim);margin-left:auto;text-align:right}
+  .card-body{padding:14px;display:flex;flex-direction:column;gap:12px}
+  .card-body.flush{padding:0}
 
-        textarea {
-          width: 100%;
-          height: 60px;
-          background: var(--bg);
-          border: 1px solid var(--border);
-          border-radius: 2px;
-          color: var(--text);
-          font-family: var(--mono);
-          font-size: 11px;
-          padding: 6px 8px;
-          resize: none;
-        }
-        textarea:focus { outline: none; border-color: var(--accent); }
+  /* ---------- form ---------- */
+  label.field{display:flex;flex-direction:column;gap:6px}
+  .field-label{font-size:11px;color:var(--muted);letter-spacing:.02em}
+  textarea,input[type=text],input[type=number]{
+    width:100%;background:var(--bg);border:1px solid var(--border-strong);border-radius:5px;
+    color:var(--text);font-family:var(--mono);font-size:12px;padding:9px 10px;
+    transition:border-color .13s ease,box-shadow .13s ease;
+  }
+  textarea{min-height:92px;resize:vertical;line-height:1.55}
+  textarea:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+  textarea::placeholder,input::placeholder{color:var(--dim)}
+  input[type=number]{width:110px}
 
-        button {
-          font-family: var(--mono);
-          font-size: 11px;
-          font-weight: 600;
-          padding: 6px 12px;
-          border-radius: 2px;
-          cursor: pointer;
-          border: 1px solid transparent;
-          transition: all 0.15s ease;
-        }
-        .btn-primary { background: #238636; color: #fff; border-color: rgba(240,246,252,0.1); }
-        .btn-primary:hover { background: #2ea043; }
-        .btn-danger { background: #da3633; color: #fff; }
-        .btn-danger:hover { background: #f85149; }
-        .btn-blue { background: #1f6feb; color: #fff; }
-        .btn-blue:hover { background: #388bfd; }
-        .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
-        .btn-ghost:hover { color: var(--text-bright); border-color: var(--text-muted); }
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    appearance:none;cursor:pointer;font-family:var(--mono);font-size:10.5px;
+    padding:4px 8px;border-radius:4px;background:var(--surface-3);
+    border:1px solid var(--border-strong);color:var(--muted);transition:all .13s ease;
+  }
+  .chip:hover{color:var(--bright);border-color:var(--accent);background:var(--accent-dim)}
 
-        .btn-sample {
-          font-family: var(--mono);
-          font-size: 10px;
-          padding: 3px 6px;
-          background: var(--panel-header);
-          border: 1px solid var(--border);
-          color: var(--text-muted);
-          border-radius: 2px;
-        }
-        .btn-sample:hover { color: var(--text-bright); border-color: var(--accent); }
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button.btn{
+    appearance:none;cursor:pointer;font-family:var(--sans);font-size:12px;font-weight:550;
+    padding:8px 14px;border-radius:5px;border:1px solid transparent;
+    transition:background .13s ease,border-color .13s ease,color .13s ease;
+    display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+  }
+  button.btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-primary{background:var(--accent);color:#06111f}
+  .btn-primary:not(:disabled):hover{background:#6ba1ff}
+  .btn-default{background:var(--surface-3);border-color:var(--border-strong);color:var(--text)}
+  .btn-default:not(:disabled):hover{border-color:var(--dim);color:var(--bright)}
+  .btn-danger{background:var(--red-dim);border-color:rgba(229,83,75,.4);color:var(--red)}
+  .btn-danger:not(:disabled):hover{background:var(--red);color:#fff;border-color:var(--red)}
+  .btn-sm{padding:5px 9px;font-size:11px}
+  .grow{flex:1}
 
-        .meta-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 10px; }
-        .meta-table td { padding: 4px 6px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
-        .meta-table td.key { color: var(--text-muted); width: 105px; }
-        .meta-table td.val { color: var(--text-bright); word-break: break-all; }
+  /* ---------- data display ---------- */
+  .kv{display:grid;grid-template-columns:112px minmax(0,1fr);gap:7px 12px;font-size:11.5px}
+  .kv dt{color:var(--dim)}
+  .kv dd{font-family:var(--mono);color:var(--text);word-break:break-all;min-width:0}
+  .hash{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
+  .hash.on{color:var(--accent)}
+  .empty{color:var(--dim);font-size:12px;text-align:center;padding:26px 14px;font-style:italic}
 
-        .risk-gauge {
-          border: 1px solid var(--border);
-          background: var(--bg);
-          padding: 8px 10px;
-          border-radius: 2px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .risk-label { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
-        .risk-val { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text-bright); }
-        .risk-val.alert { color: var(--red); }
+  table.data{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.data th{
+    text-align:left;font-weight:500;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--dim);padding:8px 12px;border-bottom:1px solid var(--border);
+    background:var(--surface-2);position:sticky;top:0;z-index:1;
+  }
+  table.data td{padding:7px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+  table.data tbody tr.pick{cursor:pointer;transition:background .1s ease}
+  table.data tbody tr.pick:hover{background:var(--surface-2)}
+  table.data tbody tr.sel{background:var(--accent-dim);box-shadow:inset 2px 0 0 var(--accent)}
+  td.mono,th.mono{font-family:var(--mono)}
+  .scroll-y{max-height:300px;overflow-y:auto}
 
-        .graph-container {
-          position: relative;
-          flex: 1;
-          background: #040608;
-          border-radius: 2px;
-          border: 1px solid var(--border-subtle);
-          overflow: hidden;
-        }
-        svg { width: 100%; height: 100%; }
+  .pill{
+    display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;
+    padding:2px 6px;border-radius:3px;background:var(--surface-3);color:var(--muted);
+    border:1px solid var(--border-strong);white-space:nowrap;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
 
-        .graph-legend {
-          position: absolute;
-          top: 10px;
-          left: 10px;
-          background: rgba(13,17,23,0.85);
-          border: 1px solid var(--border);
-          padding: 6px 10px;
-          border-radius: 2px;
-          font-family: var(--mono);
-          font-size: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          pointer-events: none;
-        }
-        .legend-row { display: flex; align-items: center; gap: 6px; }
-        .legend-box { width: 8px; height: 8px; border-radius: 1px; }
+  .banner{display:flex;flex-direction:column;gap:4px;padding:11px 13px;border-radius:5px;border:1px solid;font-size:12px}
+  .banner strong{font-size:12px;letter-spacing:.01em}
+  .banner.ok{background:var(--green-dim);border-color:rgba(63,178,127,.4);color:var(--green)}
+  .banner.bad{background:var(--red-dim);border-color:rgba(229,83,75,.4);color:var(--red)}
+  .banner.info{background:var(--accent-dim);border-color:rgba(76,141,255,.35);color:var(--accent)}
+  .banner .sub{color:var(--muted);font-family:var(--mono);font-size:11px}
 
-        .impostor-node {
-          cursor: pointer;
-          transition: transform 0.2s ease;
-        }
-        .impostor-node:hover {
-          filter: drop-shadow(0 0 6px rgba(88, 166, 255, 0.9));
-        }
-        .impostor-node:hover path {
-          stroke: #ffffff !important;
-          stroke-width: 2px !important;
-        }
-        .d3-node { cursor: pointer; stroke-width: 1.5px; }
-        .d3-label { font-family: var(--mono); font-size: 9px; fill: var(--text-bright); pointer-events: none; }
-        .d3-edge { stroke: #30363d; stroke-dasharray: 4, 3; }
-        .d3-edge.verified { stroke: #58a6ff; stroke-width: 1.8px; }
+  pre.json{
+    background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:11px;
+    font-family:var(--mono);font-size:11px;color:var(--muted);max-height:300px;overflow:auto;
+    white-space:pre;line-height:1.55;
+  }
 
-        .verify-box {
-          border: 1px solid var(--border);
-          padding: 8px 10px;
-          border-radius: 2px;
-          font-family: var(--mono);
-          font-size: 11px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .verify-box.ok { background: rgba(63,185,80,0.08); border-color: var(--green); color: var(--green); }
-        .verify-box.fail { background: rgba(248,81,73,0.08); border-color: var(--red); color: var(--red); }
+  /* ---------- graph ---------- */
+  .graph-wrap{position:relative;height:520px;background:var(--bg)}
+  .graph-wrap svg{width:100%;height:100%;display:block}
+  .legend{
+    position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:5px;
+    background:rgba(17,22,32,.9);border:1px solid var(--border);
+    border-radius:5px;padding:9px 11px;font-size:10.5px;color:var(--muted);pointer-events:none;
+  }
+  .legend .lr{display:flex;align-items:center;gap:7px}
+  .gnode{cursor:pointer}
+  .gnode circle.body{stroke:var(--bg);stroke-width:2}
+  .gnode:hover circle.body{stroke:var(--bright)}
+  .gnode text{font-family:var(--mono);font-size:9px;fill:var(--dim);pointer-events:none;user-select:none}
+  .gnode.sel circle.ring{fill:none;stroke:var(--accent);stroke-width:1.5}
+  .gedge{stroke:var(--border-strong);stroke-width:1.2;stroke-dasharray:3 3}
+  .gedge.high{stroke:var(--accent);stroke-width:1.6;stroke-dasharray:none;opacity:.75}
 
-        .matrix-scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
-        .matrix-flex { display: flex; min-width: 1400px; border-left: 1px solid var(--border-subtle); }
-        .matrix-col { flex: 1; min-width: 95px; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; }
-        .matrix-col-header { background: var(--panel-header); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-        .tactic-tag { font-family: var(--mono); font-size: 9px; color: var(--accent); }
-        .tactic-name { font-size: 10px; font-weight: 600; color: var(--text-bright); }
+  /* ---------- matrix ---------- */
+  .matrix{display:flex;overflow-x:auto;background:var(--surface)}
+  .mcol{flex:1 0 132px;border-right:1px solid var(--border);display:flex;flex-direction:column}
+  .mcol:last-child{border-right:0}
+  .mhead{padding:9px 10px;background:var(--surface-2);border-bottom:1px solid var(--border);min-height:52px}
+  .mhead .tid{font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .mhead .tname{font-size:11px;font-weight:600;color:var(--bright);line-height:1.25;margin-top:1px}
+  .mcell{padding:8px 10px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px}
+  .mcell.hit{background:var(--red-dim);box-shadow:inset 2px 0 0 var(--red)}
+  .mcell-top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .mcell-id{font-family:var(--mono);font-size:9.5px;color:var(--dim)}
+  .mcell-n{font-family:var(--mono);font-size:9.5px;padding:0 5px;border-radius:7px;background:var(--surface-3);color:var(--dim)}
+  .mcell.hit .mcell-n{background:var(--red);color:#fff;font-weight:600}
+  .mcell.hit .mcell-id{color:var(--red)}
+  .mcell-name{font-size:10.5px;color:var(--muted);line-height:1.3}
+  .mcell.hit .mcell-name{color:var(--text)}
+  .mnone{padding:12px 10px;font-size:10.5px;color:var(--dim);font-style:italic}
 
-        .tech-item {
-          padding: 6px 8px;
-          border-bottom: 1px solid var(--border-subtle);
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          background: var(--panel);
-        }
-        .tech-item.hit { background: rgba(248,81,73,0.1); border-left: 2px solid var(--red); }
-        .tech-code-row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--text-muted); }
-        .tech-badge-num { background: var(--border); color: var(--text); padding: 0 4px; border-radius: 2px; }
-        .tech-item.hit .tech-badge-num { background: var(--red); color: #fff; }
-        .tech-label-name { font-size: 10px; color: var(--text); line-height: 1.2; }
-    </style>
+  /* ---------- toast ---------- */
+  #toasts{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  .toast{
+    min-width:250px;max-width:400px;
+    background:var(--surface-3);border:1px solid var(--border-strong);border-left:3px solid var(--accent);
+    border-radius:5px;padding:10px 13px;font-size:12px;color:var(--text);
+    box-shadow:0 8px 24px rgba(0,0,0,.45);animation:slidein .22s ease;
+  }
+  .toast.ok{border-left-color:var(--green)} .toast.bad{border-left-color:var(--red)}
+  .toast.warn{border-left-color:var(--amber)}
+  .toast.out{animation:slideout .22s ease forwards}
+  @keyframes slidein{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+  @keyframes slideout{to{opacity:0;transform:translateX(16px)}}
+
+  .hint{font-size:11px;color:var(--dim);line-height:1.5}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
 </head>
 <body>
 
 <header>
-    <div class="brand-section">
-        <span class="system-title">LOGANCHOR-X</span>
-        <span class="deployment-badge">AIR-GAP DEFENSE SUBSTRATE</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">NTRO PS-26156</span>
+  <span class="mark"></span>
+  <span class="brand">LogAnchor-X</span>
+  <span class="tag">Air-gapped</span>
+  <div class="header-right">
+    <div class="chaintip" title="Latest chained Merkle root">
+      <b>chain tip</b>
+      <span id="chainTip">&mdash;</span>
     </div>
-    <div class="top-actions">
-        <button class="btn-primary" id="btnSim" onclick="toggleSim()">Run Attack Sequence</button>
-        <button class="btn-blue" onclick="triggerBenchmark(5000)">&#x26A1; Run 5k EPS Benchmark</button>
-        <button class="btn-ghost" onclick="downloadMlExport()">Export ML Tensors (PyG)</button>
-        <button class="btn-ghost" onclick="downloadEvidenceBundle()">Evidence Bundle</button>
-        <button class="btn-ghost" onclick="resetConsole()">Reset</button>
-    </div>
+    <button class="btn btn-sm btn-default" id="btnCopyTip" type="button">Copy</button>
+    <button class="btn btn-sm btn-danger" id="btnReset" type="button">Reset</button>
+  </div>
 </header>
 
-<div class="kpi-strip">
-    <div class="kpi-metric">Ingested: <span class="kpi-num" id="kpiIngested">0</span></div>
-    <div class="kpi-metric">Sealed Batches: <span class="kpi-num" id="kpiSealed">0</span></div>
-    <div class="kpi-metric">Adapters: <span class="kpi-num ok">0/6</span></div>
-    <div class="kpi-metric">ATT&amp;CK Detections: <span class="kpi-num alert" id="kpiDetections">0</span></div>
-    <div class="kpi-metric">Integrity Validations: <span class="kpi-num ok" id="kpiValidations">0</span></div>
-    <div class="kpi-metric">Bench Throughput: <span class="kpi-num blue" id="kpiBenchEps">—</span></div>
-    <div class="kpi-metric" style="margin-left:auto;">Simulation Phase: <span class="kpi-num" id="kpiSimStatus" style="color:var(--amber);">IDLE</span></div>
+<div class="kpis">
+  <div class="kpi"><span class="kpi-label">Events</span><span class="kpi-val" id="kEvents">0</span></div>
+  <div class="kpi"><span class="kpi-label">Sealed batches</span><span class="kpi-val" id="kBatches">0</span></div>
+  <div class="kpi"><span class="kpi-label">Adapters</span><span class="kpi-val green" id="kAdapters">0/0</span></div>
+  <div class="kpi"><span class="kpi-label">ATT&amp;CK detections</span><span class="kpi-val amber" id="kDetections">0</span></div>
+  <div class="kpi"><span class="kpi-label">Tamper sims</span><span class="kpi-val" id="kTamper">0</span></div>
+  <div class="kpi"><span class="kpi-label">Throughput</span><span class="kpi-val accent" id="kEps">&mdash;</span><span class="kpi-sub">events/sec</span></div>
+  <div class="kpi"><span class="kpi-label">Kill-chain risk</span><span class="kpi-val" id="kRisk">0</span><span class="kpi-sub">of 100</span></div>
+  <div class="kpi sim"><span class="kpi-label">Simulation</span><span class="kpi-val" id="kSim" style="font-size:12px"><i class="simdot"></i>Idle</span></div>
 </div>
 
+<nav role="tablist">
+  <button class="tab" role="tab" data-view="ingest" aria-selected="true">Ingest</button>
+  <button class="tab" role="tab" data-view="provenance" aria-selected="false">Provenance <span class="count" id="tabGraphN">0</span></button>
+  <button class="tab" role="tab" data-view="integrity" aria-selected="false">Integrity</button>
+  <button class="tab" role="tab" data-view="attack" aria-selected="false">ATT&amp;CK</button>
+  <button class="tab" role="tab" data-view="export" aria-selected="false">Benchmark &amp; export</button>
+</nav>
+
 <main>
-    <div class="grid-workbench">
 
-        <!-- Column 1: Ingestion & Extraction -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Ingestion &amp; Benchmark</span>
-                <span style="font-size:10px;color:var(--text-muted);">T=0 Commit</span>
+  <!-- ============ INGEST ============ -->
+  <section class="view active" id="view-ingest">
+    <div class="cols c2">
+      <div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Submit telemetry</span><span class="card-note">one log per line</span></div>
+          <div class="card-body">
+            <div class="chips" id="sampleChips"></div>
+            <label class="field">
+              <span class="sr">Raw log payload</span>
+              <textarea id="logInput" spellcheck="false"
+                placeholder="Paste raw log lines here &mdash; CEF, LEEF, JSON, XML, syslog or CSV."></textarea>
+            </label>
+            <div class="row">
+              <button class="btn btn-primary grow" id="btnIngest" type="button">Ingest</button>
+              <button class="btn btn-default" id="btnSeal" type="button">Seal batch</button>
             </div>
-            <div class="panel-body">
-                <div class="risk-gauge">
-                    <div>
-                        <div class="risk-label">KILL-CHAIN RISK SCORE</div>
-                        <div style="font-size:9px;color:var(--text-muted);">Adjacent Progression Weighted</div>
-                    </div>
-                    <div class="risk-val" id="riskScoreVal">0 / 100</div>
-                </div>
-
-                <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                    <button class="btn-sample" onclick="setSample('scan')">PortScan</button>
-                    <button class="btn-sample" onclick="setSample('ssh')">SSH Brute</button>
-                    <button class="btn-sample" onclick="setSample('priv')">Sudo Root</button>
-                    <button class="btn-sample" onclick="setSample('exfil')">Exfil</button>
-                </div>
-
-                <textarea id="logInput" placeholder="Raw telemetric string payload..."></textarea>
-
-                <div style="display:flex;gap:6px;">
-                    <button class="btn-primary" onclick="ingestManual()" style="flex:1;">Ingest &amp; Anchor</button>
-                    <button class="btn-ghost" onclick="sealManual()">Seal Batch</button>
-                </div>
-
-                <table class="meta-table" style="margin-top:4px;">
-                    <tr>
-                        <td class="key">Leaf Digest</td>
-                        <td class="val" id="dispLeafHash">—</td>
-                    </tr>
-                    <tr>
-                        <td class="key">Drain Pattern</td>
-                        <td class="val" id="dispTemplate">—</td>
-                    </tr>
-                    <tr>
-                        <td class="key">Benchmark Run</td>
-                        <td class="val" id="dispBenchStats" style="color:var(--accent);">—</td>
-                    </tr>
-                </table>
-            </div>
+            <p class="hint">Events queue into the open batch, which seals automatically at 50 events or on demand. Ctrl+Enter submits.</p>
+          </div>
         </div>
 
-        <!-- Column 2: Attack Provenance Topology -->
-        <div class="panel" style="display:flex;flex-direction:column;">
-            <div class="panel-header">
-                <span>Causal Provenance Topology</span>
-                <div style="display:flex;gap:4px;">
-                    <button class="btn-ghost" style="padding:2px 6px;font-size:10px;" onclick="loadGraph(true)">&#x21BB; Refresh</button>
-                    <button class="btn-ghost" style="padding:2px 6px;font-size:10px;" onclick="clearProvenanceGraph()">&#x2715; Clear</button>
-                </div>
-            </div>
-            <div class="graph-container" id="graphView">
-                <div class="graph-legend">
-                    <div class="legend-row"><div class="legend-box" style="background:#58a6ff;"></div> Reconnaissance (T1046)</div>
-                    <div class="legend-row"><div class="legend-box" style="background:#d29922;"></div> Credential Access (T1110)</div>
-                    <div class="legend-row"><div class="legend-box" style="background:#bc8cff;"></div> Privilege Escalation (T1078)</div>
-                    <div class="legend-row"><div class="legend-box" style="background:#f85149;"></div> Data Exfiltration (T1041)</div>
-                </div>
-                <svg id="svgGraph"></svg>
-            </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Attack sequence</span></div>
+          <div class="card-body">
+            <p class="hint">Replays a four-stage intrusion &mdash; port scan, SSH brute force, sudo escalation, then data exfiltration &mdash; one event every 1.2&nbsp;s.</p>
+            <button class="btn btn-default" id="btnSim" type="button">Run attack sequence</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Last ingested event</span></div>
+          <div class="card-body" id="lastEventBody">
+            <p class="empty">No event submitted yet.</p>
+          </div>
         </div>
 
-        <!-- Column 3: Cryptographic Audit & Tampering -->
-        <div class="panel">
-            <div class="panel-header">
-                <span>Cryptographic Verification</span>
-                <span style="font-size:10px;color:var(--green);">Merkle Inclusion</span>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Recent events</span>
+            <span class="card-note">most recent 40 &middot; select a row to audit it</span>
+          </div>
+          <div class="card-body flush">
+            <div class="scroll-y" id="eventsTableWrap">
+              <p class="empty">No events ingested.</p>
             </div>
-            <div class="panel-body">
-                <div style="color:var(--text-muted);font-family:var(--mono);font-size:10px;" id="dispEventMeta">
-                    Select any node in the topology to inspect payload and audit proofs.
-                </div>
-
-                <div style="display:flex;gap:6px;">
-                    <button class="btn-primary" onclick="verifyActive()" style="flex:1;">Verify Merkle Proof</button>
-                    <button class="btn-danger" onclick="tamperActive()" style="flex:1;">Simulate Scratch Tamper</button>
-                </div>
-
-                <div id="verifyOutcome" class="verify-box" style="display:none;"></div>
-
-                <table class="meta-table" style="margin-top:6px;">
-                    <tr>
-                        <td class="key">Recomputed Root</td>
-                        <td class="val" id="dispRecomputedRoot">—</td>
-                    </tr>
-                    <tr>
-                        <td class="key">Anchored Root</td>
-                        <td class="val" id="dispAnchoredRoot" style="color:var(--accent);">—</td>
-                    </tr>
-                </table>
-            </div>
+          </div>
         </div>
+      </div>
+    </div>
+  </section>
 
+  <!-- ============ PROVENANCE ============ -->
+  <section class="view" id="view-provenance">
+    <div class="cols c2r">
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Causal provenance graph</span>
+          <span class="card-note" id="graphStat">&mdash;</span>
+          <button class="btn btn-sm btn-default" id="btnGraphRefresh" type="button" style="margin-left:10px">Refresh</button>
+        </div>
+        <div class="card-body flush">
+          <div class="graph-wrap" id="graphWrap">
+            <div class="legend" id="graphLegend"></div>
+            <svg id="graphSvg"></svg>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Event detail</span></div>
+          <div class="card-body" id="nodeDetail">
+            <p class="empty">Select a node to inspect its payload.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">Correlation model</span></div>
+          <div class="card-body">
+            <p class="hint">Edges link a parent event to a later event within a 180&nbsp;s window, scored on kill-chain adjacency, shared source IP, destination port and service. Solid blue edges are kill-chain verified; dashed edges are IP-coincident only. Drag a node to rearrange the layout.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INTEGRITY ============ -->
+  <section class="view" id="view-integrity">
+    <div class="cols c2">
+      <div class="card">
+        <div class="card-head"><span class="card-title">Merkle inclusion audit</span></div>
+        <div class="card-body">
+          <label class="field">
+            <span class="field-label">Leaf hash</span>
+            <input type="text" id="leafInput" spellcheck="false" placeholder="SHA-256 leaf digest"/>
+          </label>
+          <div class="row">
+            <button class="btn btn-primary grow" id="btnVerify" type="button">Verify proof</button>
+            <button class="btn btn-danger" id="btnTamper" type="button">Simulate tamper</button>
+          </div>
+          <p class="hint">Verification recomputes the root from the leaf's O(log&nbsp;N) audit path and compares it to the anchored root. The leaf must already sit in a sealed batch. Tamper simulation corrupts that leaf in place to demonstrate detection &mdash; it permanently alters the batch.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">Audit result</span></div>
+        <div class="card-body" id="auditResult">
+          <p class="empty">No audit run yet.</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Row 2: Complete 14-Tactic ATT&CK Matrix -->
-    <div class="panel">
-        <div class="panel-header">
-            <span>MITRE ATT&amp;CK&reg; Enterprise Navigator (14 Tactics)</span>
-            <span style="color:var(--text-muted);font-weight:normal;">Offline Rule Classifier</span>
-        </div>
-        <div class="matrix-scroll">
-            <div class="matrix-flex" id="matrixContainer">
-                <div style="padding:12px;font-family:var(--mono);color:var(--text-muted);">Loading ATT&CK Matrix...</div>
-            </div>
-        </div>
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Ledger</span>
+        <span class="card-note" id="ledgerNote">&mdash;</span>
+        <button class="btn btn-sm btn-default" id="btnLedgerRefresh" type="button" style="margin-left:10px">Refresh</button>
+      </div>
+      <div class="card-body flush">
+        <div class="scroll-y" id="ledgerWrap"><p class="empty">No batches sealed.</p></div>
+      </div>
     </div>
+  </section>
+
+  <!-- ============ ATT&CK ============ -->
+  <section class="view" id="view-attack">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">MITRE ATT&amp;CK&reg; Enterprise coverage</span>
+        <span class="card-note">14 tactics &middot; offline rule classifier</span>
+      </div>
+      <div class="card-body flush">
+        <div class="matrix" id="matrix"><p class="empty">Loading matrix&hellip;</p></div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:10px">Cells highlight once the classifier has mapped at least one ingested event to that technique. Only techniques present in the built-in rule set are listed.</p>
+  </section>
+
+  <!-- ============ EXPORT ============ -->
+  <section class="view" id="view-export">
+    <div class="card">
+      <div class="card-head"><span class="card-title">Throughput benchmark</span></div>
+      <div class="card-body">
+        <div class="row">
+          <span class="field-label">Synthetic events</span>
+          <input type="number" id="benchCount" value="5000" min="1" max="200000" step="500"/>
+          <button class="btn btn-primary" id="btnBench" type="button">Run benchmark</button>
+        </div>
+        <p class="hint">Ingests synthetic events across all six adapters, seals the batch and measures end-to-end commit throughput. Benchmark events join live state and are counted in the KPIs above.</p>
+        <div id="benchResult"></div>
+      </div>
+    </div>
+
+    <div class="cols auto" style="margin-top:14px">
+      <div class="card" style="margin-top:0">
+        <div class="card-head"><span class="card-title">GNN tensor export</span></div>
+        <div class="card-body">
+          <p class="hint">Node features and a COO edge index for the most recent 50 events, shaped for PyTorch Geometric or DGL.</p>
+          <div class="row">
+            <button class="btn btn-default" id="btnMlPreview" type="button">Preview</button>
+            <button class="btn btn-primary" id="btnMlDownload" type="button">Download JSON</button>
+          </div>
+          <div id="mlResult"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:0">
+        <div class="card-head"><span class="card-title">Evidence bundle</span></div>
+        <div class="card-body">
+          <p class="hint">Every sealed batch with its Merkle root and chained root, for offline forensic attestation.</p>
+          <div class="row">
+            <button class="btn btn-default" id="btnEvPreview" type="button">Preview</button>
+            <button class="btn btn-primary" id="btnEvDownload" type="button">Download JSON</button>
+          </div>
+          <div id="evResult"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
+<div id="toasts" aria-live="polite"></div>
+
 <script>
-    var SAMPLES = {
-      scan: "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN",
-      ssh:  "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2",
-      priv: "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77",
-      exfil:"Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800"
+"use strict";
+
+/* ============================================================
+   Constants
+   ============================================================ */
+var SAMPLES = [
+  { label: "Port scan", text: "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN" },
+  { label: "SSH brute", text: "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2" },
+  { label: "Sudo root", text: "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77" },
+  { label: "Exfiltration", text: "Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800" },
+  { label: "LEEF", text: "LEEF:2.0|IBM|QRadar|7.3|1001|src=10.0.0.77\tdst=10.0.0.5\tsev=6\tcat=AUTH_FAIL" },
+  { label: "JSON", text: '{"timestamp":"2026-09-10T14:03:00Z","src":"10.0.0.77","service":"sudo","action":"root_attempt"}' },
+  { label: "XML", text: "<event><src>10.0.0.77</src><dst>203.0.113.10</dst><bytes>1048576</bytes><type>EXFIL</type></event>" },
+  { label: "CSV", text: "10.0.0.77,10.0.0.1,443,TCP,ALLOW,FLOW_RECORD" },
+  { label: "Full kill chain", text: [
+      "Sep 10 14:00:01 edge-fw CEF:0|NetSec|Firewall|1.0|100|PORT_SCAN|Low|src=10.0.0.77 dst=192.168.1.1 proto=TCP dpt=22 flags=SYN",
+      "Sep 10 14:00:15 auth-gw sshd[4011]: Failed password for invalid user admin from 10.0.0.77 port 41201 ssh2",
+      "Sep 10 14:01:05 target-server sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/bin/bash src=10.0.0.77",
+      "Sep 10 14:02:30 edge-proxy CEF:0|NetSec|Proxy|1.0|200|LARGE_TRANSFER|High|src=10.0.0.77 dst=203.0.113.88 category=DATA_EXFIL bytes=52428800"
+    ].join("\n") }
+];
+
+/* Kill-chain stage -> colour + label. Stage 0 means unclassified. */
+var STAGES = {
+  0: { c: "#64748b", n: "Unclassified" },
+  1: { c: "#4c8dff", n: "Reconnaissance" },
+  2: { c: "#38bdf8", n: "Initial access / discovery" },
+  3: { c: "#d9a441", n: "Credential access / execution" },
+  4: { c: "#a678f0", n: "Privilege escalation / persistence" },
+  5: { c: "#f0883e", n: "Evasion / lateral / collection" },
+  6: { c: "#e5534b", n: "Exfiltration / C2" },
+  7: { c: "#ff5c8a", n: "Impact" }
+};
+function stageOf(s) { return STAGES[s] || STAGES[0]; }
+
+var POLL_MS = 3000;
+
+/* ============================================================
+   State
+   ============================================================ */
+var state = {
+  view: "ingest",
+  status: null,
+  nodes: [],
+  edges: [],
+  activeLeaf: "",
+  batches: [],
+  simBusy: false
+};
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+function $(id) { return document.getElementById(id); }
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function num(n) { return Number(n || 0).toLocaleString(); }
+function shortHash(h) { return h ? h.slice(0, 10) + "…" + h.slice(-6) : "—"; }
+
+function toast(msg, kind) {
+  var el = document.createElement("div");
+  el.className = "toast " + (kind || "");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(function () {
+    el.classList.add("out");
+    setTimeout(function () { el.remove(); }, 240);
+  }, 3600);
+}
+
+/* The backend emits JSON but does not parse request bodies as JSON.
+   /api/parse falls back to treating the whole body as the raw log, which
+   round-trips every format faithfully; the {"log":...} envelope does not
+   (it leaves literal backslashes inside quote-bearing payloads). */
+function req(path, opts) {
+  return fetch(path, opts || {}).then(function (r) {
+    if (!r.ok) throw new Error(path + " responded " + r.status);
+    return r.json();
+  });
+}
+function get(path) { return req(path, { cache: "no-store" }); }
+function post(path, body) {
+  return req(path, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body: body == null ? "" : body
+  });
+}
+function fail(err) { console.error(err); toast(err.message || String(err), "bad"); }
+
+function busy(btn, label, work) {
+  var original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  function restore() { btn.disabled = false; btn.textContent = original; }
+  return work().then(
+    function (v) { restore(); return v; },
+    function (e) { restore(); throw e; }
+  );
+}
+
+function copy(text, what) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(
+    function () { toast(what + " copied to clipboard", "ok"); },
+    function () { toast("Clipboard unavailable", "warn"); }
+  );
+}
+
+function download(obj, filename) {
+  var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  toast("Saved " + filename, "ok");
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+function showView(name) {
+  state.view = name;
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
+    t.setAttribute("aria-selected", String(t.dataset.view === name));
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".view"), function (v) {
+    v.classList.toggle("active", v.id === "view-" + name);
+  });
+  if (name === "provenance") relayout();
+  if (name === "attack") loadMatrix();
+  if (name === "integrity") loadLedger();
+}
+
+/* ============================================================
+   Status / KPIs
+   ============================================================ */
+function refreshStatus() {
+  return get("/api/status").then(function (d) {
+    state.status = d;
+    $("kEvents").textContent = num(d.ingested);
+    $("kBatches").textContent = num(d.sealedBatches);
+    $("kAdapters").textContent = d.adaptersActive + "/" + d.uniqueFormatsCount;
+    $("kDetections").textContent = num(d.detections);
+    $("kTamper").textContent = num(d.integrityChecksPassed);
+    $("kEps").textContent = d.benchEps > 0 ? num(d.benchEps) : "—";
+
+    var risk = $("kRisk");
+    risk.textContent = d.threatScore;
+    risk.className = "kpi-val " + (d.threatScore >= 75 ? "red" : d.threatScore >= 40 ? "amber" : "green");
+
+    $("chainTip").textContent = shortHash(d.chainTip);
+    $("chainTip").title = d.chainTip || "";
+
+    $("kSim").innerHTML = '<i class="simdot' + (d.simRunning ? " live" : "") + '"></i>' +
+                          (d.simRunning ? "Running" : "Idle");
+
+    if (!state.simBusy) {
+      var btn = $("btnSim");
+      btn.textContent = d.simRunning ? "Stop sequence" : "Run attack sequence";
+      btn.className = "btn " + (d.simRunning ? "btn-danger" : "btn-default");
+    }
+  });
+}
+
+/* ============================================================
+   Ingest
+   ============================================================ */
+function renderSamples() {
+  $("sampleChips").innerHTML = SAMPLES.map(function (s, i) {
+    return '<button class="chip" type="button" data-i="' + i + '">' + esc(s.label) + "</button>";
+  }).join("");
+}
+
+function ingest() {
+  var lines = $("logInput").value.split("\n")
+    .map(function (l) { return l.trim(); })
+    .filter(function (l) { return l.length > 0; });
+
+  if (!lines.length) { toast("Enter at least one log line", "warn"); return; }
+
+  /* The backend ingests one event per request, so submit sequentially. */
+  var results = [];
+  return busy($("btnIngest"), "Ingesting…", function () {
+    return lines.reduce(function (p, line) {
+      return p.then(function () {
+        return post("/api/parse", line).then(function (d) { results.push(d); });
+      });
+    }, Promise.resolve()).then(function () {
+      var last = results[results.length - 1];
+      renderLastEvent(last);
+      state.activeLeaf = last.leafHash;
+      $("leafInput").value = last.leafHash;
+      toast(results.length === 1
+        ? last.id + " ingested as " + last.format
+        : results.length + " events ingested", "ok");
+      return refreshAll();
+    });
+  }).catch(fail);
+}
+
+function renderLastEvent(d) {
+  if (!d) return;
+  $("lastEventBody").innerHTML =
+    '<dl class="kv">' +
+      "<dt>Event</dt><dd>" + esc(d.id) + "</dd>" +
+      "<dt>Format</dt><dd>" + esc(d.format) + "</dd>" +
+      "<dt>Template</dt><dd>" + esc(d.templateId) + " &middot; " + esc(d.template) + "</dd>" +
+      "<dt>Tactic</dt><dd>" + esc(d.mitreTactic) + "</dd>" +
+      "<dt>Technique</dt><dd>" + esc(d.mitreTechnique) + "</dd>" +
+      '<dt>Leaf hash</dt><dd class="hash on">' + esc(d.leafHash) + "</dd>" +
+    "</dl>" +
+    '<div class="row">' +
+      '<button class="btn btn-sm btn-default" data-copy="' + esc(d.leafHash) + '">Copy leaf hash</button>' +
+      '<button class="btn btn-sm btn-default" data-audit="' + esc(d.leafHash) + '">Audit this event</button>' +
+    "</div>";
+}
+
+function sealBatch() {
+  return busy($("btnSeal"), "Sealing…", function () {
+    return post("/api/anchor").then(function (d) {
+      if (d.status === "NOOP") toast(d.message, "warn");
+      else toast(d.batchId + " sealed · " + d.leavesAnchored + " leaves anchored", "ok");
+      return refreshAll();
+    });
+  }).catch(fail);
+}
+
+function toggleSim() {
+  var running = !!(state.status && state.status.simRunning);
+  state.simBusy = true;
+  /* Stopping uses the explicit {"action":"stop"} command; starting uses the
+     toggle path, which kicks off the scheduled scenario. */
+  return busy($("btnSim"), running ? "Stopping…" : "Starting…", function () {
+    return post("/api/simulate-attack", running ? '{"action":"stop"}' : "{}")
+      .then(function (d) {
+        toast(d.status === "STARTED"
+          ? "Attack sequence started — 4 events over ~5 s"
+          : "Attack sequence stopped", d.status === "STARTED" ? "ok" : "warn");
+      });
+  }).catch(fail).then(function () {
+    state.simBusy = false;
+    return refreshAll();
+  });
+}
+
+/* ============================================================
+   Events table
+   ============================================================ */
+function renderEventsTable() {
+  var wrap = $("eventsTableWrap");
+  if (!state.nodes.length) {
+    wrap.innerHTML = '<p class="empty">No events ingested.</p>';
+    return;
+  }
+  var rows = state.nodes.slice().reverse().map(function (n) {
+    var st = stageOf(n.stage);
+    return '<tr class="pick' + (n.leafHash === state.activeLeaf ? " sel" : "") +
+             '" data-leaf="' + esc(n.leafHash) + '">' +
+           '<td class="mono">' + esc(n.id) + "</td>" +
+           '<td><span class="pill"><i class="dot" style="background:' + st.c + '"></i>' +
+             esc(n.mitreId) + "</span> " + esc(n.mitreTechnique) + "</td>" +
+           '<td class="mono">' + esc(n.sourceIp) + "</td>" +
+           '<td class="mono">' + esc(n.service) + "</td>" +
+           '<td class="mono" style="color:var(--dim)">' + esc(shortHash(n.leafHash)) + "</td>" +
+           "</tr>";
+  }).join("");
+
+  wrap.innerHTML =
+    '<table class="data"><thead><tr>' +
+      "<th>Event</th><th>Technique</th><th>Source</th><th>Service</th><th>Leaf</th>" +
+    "</tr></thead><tbody>" + rows + "</tbody></table>";
+}
+
+function selectLeaf(leaf, opts) {
+  state.activeLeaf = leaf;
+  $("leafInput").value = leaf;
+  renderEventsTable();
+  drawGraph();
+  var node = state.nodes.filter(function (n) { return n.leafHash === leaf; })[0];
+  if (node) renderNodeDetail(node);
+  if (opts && opts.goto) showView(opts.goto);
+}
+
+/* ============================================================
+   Provenance graph - self-contained force layout, no CDN
+   ============================================================ */
+var PAD = 26;
+var REPULSION = 5200, LINK_LEN = 96, SPRING = 0.035, CENTER = 0.012, DAMP = 0.82;
+var gfx = { nodes: [], edges: [], anim: null, alpha: 0, drag: null, moved: false, w: 0, h: 0 };
+
+function renderLegend() {
+  $("graphLegend").innerHTML = [1, 3, 4, 5, 6, 0].map(function (s) {
+    var st = stageOf(s);
+    return '<div class="lr"><i class="dot" style="background:' + st.c + '"></i>' + esc(st.n) + "</div>";
+  }).join("");
+}
+
+function loadGraph() {
+  return get("/api/provenance-graph?t=" + Date.now()).then(function (d) {
+    state.nodes = d.nodes || [];
+    state.edges = d.edges || [];
+    $("tabGraphN").textContent = state.nodes.length;
+    $("graphStat").textContent = state.nodes.length + " events · " + state.edges.length + " correlations";
+    renderEventsTable();
+    syncGraph();
+  });
+}
+
+/* Merge fresh server data into the layout, preserving the positions of nodes
+   we already know so the graph does not jump on every poll. */
+function syncGraph() {
+  var prev = {};
+  gfx.nodes.forEach(function (n) { prev[n.id] = n; });
+
+  gfx.nodes = state.nodes.map(function (n) {
+    var p = prev[n.id];
+    return {
+      id: n.id, data: n, stage: n.stage,
+      x: p ? p.x : null, y: p ? p.y : null,
+      vx: 0, vy: 0, fixed: false
     };
+  });
 
-    var activeLeaf = "";
-    var simActive = false;
+  var byId = {};
+  gfx.nodes.forEach(function (n) { byId[n.id] = n; });
 
-    function setSample(k) { document.getElementById("logInput").value = SAMPLES[k] || ""; }
+  gfx.edges = state.edges.map(function (e) {
+    return { s: byId[e.source], t: byId[e.target], high: /HIGH/.test(e.confidence || "") };
+  }).filter(function (e) { return e.s && e.t; });
 
-    function ingestManual() {
-      var raw = document.getElementById("logInput").value.trim();
-      if (!raw) return;
-      fetch("/api/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ log: raw })
-      })
-      .then(r => r.json())
-      .then(d => {
-        activeLeaf = d.leafHash;
-        document.getElementById("dispLeafHash").textContent = d.leafHash;
-        document.getElementById("dispTemplate").textContent = d.template;
-        manualRefresh();
-      });
+  /* Only re-energise the simulation when the node set actually changed;
+     otherwise a settled graph would jitter on every poll. */
+  var changed = gfx.nodes.length !== Object.keys(prev).length ||
+                gfx.nodes.some(function (n) { return n.x == null; });
+  relayout(changed);
+}
+
+function relayout(kick) {
+  var wrap = $("graphWrap");
+  if (!wrap) return;
+  gfx.w = wrap.clientWidth || 800;
+  gfx.h = wrap.clientHeight || 520;
+
+  var n = Math.max(1, gfx.nodes.length);
+  gfx.nodes.forEach(function (node, i) {
+    if (node.x == null || !isFinite(node.x)) {
+      var a = (i / n) * Math.PI * 2;
+      var r = Math.min(gfx.w, gfx.h) * 0.32;
+      node.x = gfx.w / 2 + Math.cos(a) * r + (Math.random() - 0.5) * 30;
+      node.y = gfx.h / 2 + Math.sin(a) * r + (Math.random() - 0.5) * 30;
     }
+  });
 
-    function sealManual() {
-      fetch("/api/anchor", { method: "POST" })
-        .then(r => r.json())
-        .then(d => {
-          manualRefresh();
-          alert("Batch " + d.batchId + " sealed (" + d.leavesAnchored + " leaves).");
-        });
+  if (kick === false && gfx.alpha <= 0.02) { drawGraph(); return; }
+
+  gfx.alpha = 1;
+  if (!gfx.anim) gfx.anim = requestAnimationFrame(step);
+}
+
+function tick() {
+  var ns = gfx.nodes, i, j, a, b, dx, dy, d2, d, f, rx, ry;
+
+  for (i = 0; i < ns.length; i++) {
+    a = ns[i];
+    for (j = i + 1; j < ns.length; j++) {
+      b = ns[j];
+      dx = b.x - a.x; dy = b.y - a.y;
+      d2 = dx * dx + dy * dy;
+      if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+      if (d2 > 90000) continue;                 /* ignore distant pairs */
+      d = Math.sqrt(d2);
+      f = REPULSION / d2;
+      rx = (dx / d) * f; ry = (dy / d) * f;
+      a.vx -= rx; a.vy -= ry;
+      b.vx += rx; b.vy += ry;
     }
+  }
 
-    function triggerBenchmark(n) {
-      var btn = event.target;
-      btn.textContent = "Benchmarking...";
-      fetch("/api/benchmark", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: n })
-      })
-      .then(r => r.json())
-      .then(d => {
-        btn.textContent = "⚡ Run 5k EPS Benchmark";
-        document.getElementById("dispBenchStats").textContent = d.throughputEps.toLocaleString() + " EPS (" + d.elapsedMs + "ms for " + d.eventsProcessed + " logs)";
-        manualRefresh();
-      });
+  gfx.edges.forEach(function (e) {
+    var ex = e.t.x - e.s.x, ey = e.t.y - e.s.y;
+    var ed = Math.sqrt(ex * ex + ey * ey) || 0.01;
+    var ef = (ed - LINK_LEN) * SPRING;
+    var sx = (ex / ed) * ef, sy = (ey / ed) * ef;
+    e.s.vx += sx; e.s.vy += sy;
+    e.t.vx -= sx; e.t.vy -= sy;
+  });
+
+  for (i = 0; i < ns.length; i++) {
+    a = ns[i];
+    if (a.fixed) { a.vx = 0; a.vy = 0; continue; }
+    a.vx += (gfx.w / 2 - a.x) * CENTER;
+    a.vy += (gfx.h / 2 - a.y) * CENTER;
+    a.vx *= DAMP; a.vy *= DAMP;
+    a.x += a.vx * gfx.alpha;
+    a.y += a.vy * gfx.alpha;
+    a.x = Math.max(PAD, Math.min(gfx.w - PAD, a.x));
+    a.y = Math.max(PAD, Math.min(gfx.h - PAD, a.y));
+  }
+}
+
+function step() {
+  tick();
+  drawGraph();
+  gfx.alpha *= 0.985;
+  gfx.anim = (gfx.alpha > 0.02 || gfx.drag) ? requestAnimationFrame(step) : null;
+}
+
+function drawGraph() {
+  var svg = $("graphSvg");
+  if (!gfx.nodes.length) {
+    svg.innerHTML =
+      '<text x="50%" y="50%" text-anchor="middle" fill="#5d6b80" ' +
+      'font-family="ui-monospace,monospace" font-size="12">' +
+      "Awaiting telemetry — ingest a log or run the attack sequence.</text>";
+    return;
+  }
+
+  var parts = [];
+  gfx.edges.forEach(function (e) {
+    parts.push('<line class="gedge' + (e.high ? " high" : "") + '" x1="' +
+      e.s.x.toFixed(1) + '" y1="' + e.s.y.toFixed(1) + '" x2="' +
+      e.t.x.toFixed(1) + '" y2="' + e.t.y.toFixed(1) + '"/>');
+  });
+
+  gfx.nodes.forEach(function (n) {
+    var st = stageOf(n.stage);
+    var sel = n.data.leafHash === state.activeLeaf;
+    parts.push(
+      '<g class="gnode' + (sel ? " sel" : "") + '" data-id="' + esc(n.id) +
+      '" transform="translate(' + n.x.toFixed(1) + "," + n.y.toFixed(1) + ')">' +
+        (sel ? '<circle class="ring" r="13"/>' : "") +
+        '<circle class="body" r="8" fill="' + st.c + '"/>' +
+        '<text x="13" y="4">' + esc(n.data.mitreId) + "</text>" +
+      "</g>"
+    );
+  });
+
+  svg.innerHTML = parts.join("");
+}
+
+function renderNodeDetail(n) {
+  var st = stageOf(n.stage);
+  $("nodeDetail").innerHTML =
+    '<div class="row" style="gap:8px">' +
+      '<span class="pill"><i class="dot" style="background:' + st.c + '"></i>' + esc(n.id) + "</span>" +
+      '<span class="pill">' + esc(n.mitreId) + "</span>" +
+    "</div>" +
+    '<dl class="kv">' +
+      "<dt>Technique</dt><dd>" + esc(n.mitreTechnique) + "</dd>" +
+      "<dt>Kill-chain</dt><dd>" + esc(n.stage) + " &middot; " + esc(st.n) + "</dd>" +
+      "<dt>Source IP</dt><dd>" + esc(n.sourceIp) + "</dd>" +
+      "<dt>Dest port</dt><dd>" + esc(n.destPort) + "</dd>" +
+      "<dt>Service</dt><dd>" + esc(n.service) + "</dd>" +
+      '<dt>Leaf hash</dt><dd class="hash on">' + esc(n.leafHash) + "</dd>" +
+    "</dl>" +
+    '<div class="field-label">Raw payload</div>' +
+    '<pre class="json" style="white-space:pre-wrap">' + esc(n.raw) + "</pre>" +
+    '<div class="row">' +
+      '<button class="btn btn-sm btn-default" data-copy="' + esc(n.leafHash) + '">Copy leaf hash</button>' +
+      '<button class="btn btn-sm btn-default" data-audit="' + esc(n.leafHash) + '">Audit this event</button>' +
+    "</div>";
+}
+
+/* ============================================================
+   Integrity
+   ============================================================ */
+function verify() {
+  var leaf = $("leafInput").value.trim();
+  if (!leaf) { toast("Enter or select a leaf hash first", "warn"); return; }
+  return busy($("btnVerify"), "Verifying…", function () {
+    return get("/api/verify?leafHash=" + encodeURIComponent(leaf)).then(function (d) {
+      renderAudit(d, leaf, "verify");
+      return refreshStatus();
+    });
+  }).catch(fail);
+}
+
+function tamper() {
+  var leaf = $("leafInput").value.trim();
+  if (!leaf) { toast("Enter or select a leaf hash first", "warn"); return; }
+  if (!confirm("Simulate tampering with this leaf?\n\nThis permanently corrupts the leaf inside its sealed batch so that later verification fails. It cannot be undone except by resetting the session.")) return;
+  return busy($("btnTamper"), "Tampering…", function () {
+    return post("/api/tamper-simulate", JSON.stringify({ leafHash: leaf })).then(function (d) {
+      renderAudit(d, leaf, "tamper");
+      return refreshAll();
+    });
+  }).catch(fail);
+}
+
+function renderAudit(d, leaf, mode) {
+  var ok = !!d.valid;
+  var title = ok ? "Inclusion proof valid"
+                 : (mode === "tamper" ? "Tampering detected" : "Proof failed");
+  var html =
+    '<div class="banner ' + (ok ? "ok" : "bad") + '">' +
+      "<strong>" + esc(title) + "</strong>" +
+      '<span class="sub">' + esc(d.message || "") + "</span>" +
+    "</div>" +
+    '<dl class="kv">' +
+      "<dt>Leaf</dt><dd>" + esc(leaf) + "</dd>" +
+      "<dt>Batch</dt><dd>" + esc(d.batchId || "not sealed") + "</dd>";
+  if (d.recomputedRoot || d.anchoredRoot) {
+    html +=
+      "<dt>Recomputed root</dt><dd>" + esc(d.recomputedRoot || "—") + "</dd>" +
+      '<dt>Anchored root</dt><dd class="hash on">' + esc(d.anchoredRoot || "—") + "</dd>";
+  }
+  html += "</dl>";
+  $("auditResult").innerHTML = html;
+}
+
+function loadLedger() {
+  return get("/api/evidence-bundle").then(function (d) {
+    state.batches = d.batches || [];
+    $("ledgerNote").textContent = state.batches.length + " sealed batches";
+    var wrap = $("ledgerWrap");
+    if (!state.batches.length) {
+      wrap.innerHTML = '<p class="empty">No batches sealed.</p>';
+      return;
     }
+    wrap.innerHTML =
+      '<table class="data"><thead><tr>' +
+        "<th>Batch</th><th>Sealed</th><th>Leaves</th><th>Merkle root</th><th>Chained root</th>" +
+      "</tr></thead><tbody>" +
+      state.batches.slice().reverse().map(function (b) {
+        return "<tr>" +
+          '<td class="mono">' + esc(b.batchId) + "</td>" +
+          '<td class="mono" style="color:var(--muted)">' + esc(new Date(b.timestamp).toLocaleTimeString()) + "</td>" +
+          '<td class="mono">' + esc(b.leafCount) + "</td>" +
+          '<td class="mono" style="color:var(--dim)" title="' + esc(b.merkleRoot) + '">' + esc(shortHash(b.merkleRoot)) + "</td>" +
+          '<td class="mono" style="color:var(--accent)" title="' + esc(b.chainedRoot) + '">' + esc(shortHash(b.chainedRoot)) + "</td>" +
+        "</tr>";
+      }).join("") + "</tbody></table>";
+  }).catch(fail);
+}
 
-    function resetConsole() {
-      if (!confirm("Reset runtime session state? Ledger remains committed.")) return;
-      fetch("/api/reset", { method: "POST" })
-        .then(() => {
-          activeLeaf = "";
-          document.getElementById("dispLeafHash").textContent = "—";
-          document.getElementById("dispTemplate").textContent = "—";
-          document.getElementById("dispBenchStats").textContent = "—";
-          manualRefresh();
-        });
-    }
+/* ============================================================
+   ATT&CK matrix
+   ============================================================ */
+function loadMatrix() {
+  return get("/api/mitre-matrix").then(function (d) {
+    $("matrix").innerHTML = (d.tactics || []).map(function (t) {
+      var cells = (t.techniques || []).length
+        ? t.techniques.map(function (tech) {
+            return '<div class="mcell' + (tech.count > 0 ? " hit" : "") + '">' +
+              '<div class="mcell-top">' +
+                '<span class="mcell-id">' + esc(tech.id) + "</span>" +
+                '<span class="mcell-n">' + esc(tech.count) + "</span>" +
+              "</div>" +
+              '<div class="mcell-name">' + esc(tech.name) + "</div>" +
+            "</div>";
+          }).join("")
+        : '<div class="mnone">No rules</div>';
+      return '<div class="mcol"><div class="mhead">' +
+        '<div class="tid">' + esc(t.id) + "</div>" +
+        '<div class="tname">' + esc(t.name) + "</div></div>" + cells + "</div>";
+    }).join("");
+  }).catch(fail);
+}
 
-    function downloadMlExport() {
-      fetch("/api/ml-export")
-        .then(r => r.json())
-        .then(d => {
-          var blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement("a");
-          a.href = url;
-          a.download = "loganchor_gnn_tensors.json";
-          a.click();
-        });
-    }
+/* ============================================================
+   Benchmark & export
+   ============================================================ */
+function runBenchmark() {
+  var count = parseInt($("benchCount").value, 10);
+  if (!isFinite(count) || count < 1) { toast("Enter an event count of at least 1", "warn"); return; }
+  if (count > 200000) { toast("Capped at 200,000 events", "warn"); count = 200000; }
 
-    function downloadEvidenceBundle() {
-      fetch("/api/evidence-bundle")
-        .then(r => r.json())
-        .then(d => {
-          var blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement("a");
-          a.href = url;
-          a.download = "cyberguard_evidence_bundle.json";
-          a.click();
-        });
-    }
+  /* The handler strips every non-digit from the body, so the body must carry
+     exactly one number and nothing else numeric. */
+  return busy($("btnBench"), "Running…", function () {
+    return post("/api/benchmark", '{"count":' + count + "}").then(function (d) {
+      $("benchResult").innerHTML =
+        '<div class="banner info"><strong>' + num(d.throughputEps) + " events/sec</strong>" +
+        '<span class="sub">' + num(d.eventsProcessed) + " events in " + num(d.elapsedMs) + " ms</span></div>" +
+        '<dl class="kv" style="margin-top:12px">' +
+          "<dt>Events</dt><dd>" + num(d.eventsProcessed) + "</dd>" +
+          "<dt>Elapsed</dt><dd>" + num(d.elapsedMs) + " ms</dd>" +
+          "<dt>Throughput</dt><dd>" + num(d.throughputEps) + " events/sec</dd>" +
+          "<dt>Batches committed</dt><dd>" + num(d.batchesCommitted) + "</dd>" +
+          "<dt>Avg batch latency</dt><dd>" + Number(d.avgBatchLatencyMs).toFixed(2) + " ms</dd>" +
+          '<dt>Chain tip</dt><dd class="hash on">' + esc(d.chainTip) + "</dd>" +
+        "</dl>";
+      toast("Benchmark complete · " + num(d.throughputEps) + " events/sec", "ok");
+      return refreshAll();
+    });
+  }).catch(fail);
+}
 
-    function toggleSim() {
-      fetch("/api/simulate-attack", { method: "POST" })
-        .then(r => r.json())
-        .then(() => manualRefresh());
-    }
+function mlExport(doDownload) {
+  var btn = doDownload ? $("btnMlDownload") : $("btnMlPreview");
+  return busy(btn, "Working…", function () {
+    return get("/api/ml-export").then(function (d) {
+      if (doDownload) { download(d, "loganchor_gnn_tensors.json"); return; }
+      $("mlResult").innerHTML =
+        '<dl class="kv" style="margin-top:4px">' +
+          "<dt>Format</dt><dd>" + esc(d.tensorFormat) + "</dd>" +
+          "<dt>Nodes</dt><dd>" + num(d.numNodes) + "</dd>" +
+          "<dt>Edges</dt><dd>" + num(d.numEdges) + "</dd>" +
+          "<dt>Feature dims</dt><dd>" + num(d.featureDimensions) + "</dd>" +
+          "<dt>Schema</dt><dd>" + esc((d.featureSchema || []).join(", ")) + "</dd>" +
+          "<dt>Generated</dt><dd>" + esc(d.generatedAt) + "</dd>" +
+        "</dl>" +
+        '<pre class="json" style="margin-top:10px">' + esc(JSON.stringify({
+          x_node_features: (d.x_node_features || []).slice(0, 5),
+          edge_index: d.edge_index
+        }, null, 2)) + "</pre>" +
+        '<p class="hint">First 5 of ' + num(d.numNodes) + " feature rows shown.</p>";
+    });
+  }).catch(fail);
+}
 
-    function manualRefresh() {
-      refreshStatus();
-      loadGraph(true);
-      loadMatrix();
-    }
+function evidenceExport(doDownload) {
+  var btn = doDownload ? $("btnEvDownload") : $("btnEvPreview");
+  return busy(btn, "Working…", function () {
+    return get("/api/evidence-bundle").then(function (d) {
+      if (doDownload) { download(d, "loganchor_evidence_bundle.json"); return; }
+      $("evResult").innerHTML =
+        '<dl class="kv" style="margin-top:4px">' +
+          "<dt>Bundle type</dt><dd>" + esc(d.bundleType) + "</dd>" +
+          "<dt>Organization</dt><dd>" + esc(d.organization) + "</dd>" +
+          "<dt>Exported</dt><dd>" + esc(d.exportedAt) + "</dd>" +
+          "<dt>Batches</dt><dd>" + num(d.totalBatches) + "</dd>" +
+          '<dt>Chain tip</dt><dd class="hash on">' + esc(d.latestChainedRoot) + "</dd>" +
+        "</dl>" +
+        '<pre class="json" style="margin-top:10px">' +
+          esc(JSON.stringify((d.batches || []).slice(-3), null, 2)) + "</pre>" +
+        '<p class="hint">Last 3 of ' + num(d.totalBatches) + " batches shown.</p>";
+    });
+  }).catch(fail);
+}
 
-    function refreshStatus() {
-      fetch("/api/status")
-        .then(r => r.json())
-        .then(d => {
-          document.getElementById("kpiIngested").textContent = (d.ingested || 0).toLocaleString();
-          document.getElementById("kpiSealed").textContent = d.sealedBatches || 0;
-          document.getElementById("kpiDetections").textContent = d.detections || 0;
-          document.getElementById("kpiValidations").textContent = d.validations || 0;
-          document.getElementById("kpiSimStatus").textContent = d.simRunning ? "ATTACK IN PROGRESS" : "IDLE";
-          document.getElementById("kpiSimStatus").style.color = d.simRunning ? "var(--red)" : "var(--amber)";
+/* ============================================================
+   Reset
+   ============================================================ */
+function resetSession() {
+  if (!confirm("Reset the session?\n\nAll events, templates and sealed batches are cleared, the on-disk ledger file is deleted, and the chain restarts from genesis.")) return;
+  return busy($("btnReset"), "Resetting…", function () {
+    return post("/api/reset").then(function () {
+      state.activeLeaf = "";
+      state.nodes = []; state.edges = []; state.batches = [];
+      gfx.nodes = []; gfx.edges = [];
+      $("leafInput").value = "";
+      $("lastEventBody").innerHTML = '<p class="empty">No event submitted yet.</p>';
+      $("auditResult").innerHTML = '<p class="empty">No audit run yet.</p>';
+      $("nodeDetail").innerHTML = '<p class="empty">Select a node to inspect its payload.</p>';
+      $("benchResult").innerHTML = "";
+      $("mlResult").innerHTML = "";
+      $("evResult").innerHTML = "";
+      toast("Session reset to genesis", "ok");
+      return refreshAll();
+    });
+  }).catch(fail);
+}
 
-          if (d.benchEps > 0) {
-            document.getElementById("kpiBenchEps").textContent = d.benchEps.toLocaleString() + " EPS";
-          }
+/* ============================================================
+   Orchestration
+   ============================================================ */
+function refreshAll() {
+  var jobs = [refreshStatus(), loadGraph()];
+  if (state.view === "attack") jobs.push(loadMatrix());
+  if (state.view === "integrity") jobs.push(loadLedger());
+  return Promise.all(jobs).catch(function (e) { console.error(e); });
+}
 
-          var sc = d.threatScore || 0;
-          var rEl = document.getElementById("riskScoreVal");
-          rEl.textContent = sc + " / 100";
-          rEl.className = sc >= 75 ? "risk-val alert" : "risk-val";
+/* ============================================================
+   Wiring
+   ============================================================ */
+document.addEventListener("click", function (ev) {
+  var t = ev.target;
 
-          var btn = document.getElementById("btnSim");
-          if (d.simRunning && !simActive) {
-            simActive = true;
-            btn.textContent = "Halt Sequence";
-            btn.className = "btn-danger";
-          } else if (!d.simRunning && simActive) {
-            simActive = false;
-            btn.textContent = "Run Attack Sequence";
-            btn.className = "btn-primary";
-          }
-        });
-    }
+  var tab = t.closest(".tab");
+  if (tab) { showView(tab.dataset.view); return; }
 
-    var provenanceRequest = null;
-    var activeSim = null;
-    var cachedNodeHash = "";
+  var chip = t.closest(".chip[data-i]");
+  if (chip) {
+    $("logInput").value = SAMPLES[+chip.dataset.i].text;
+    $("logInput").focus();
+    return;
+  }
 
-    function loadGraph(forceRefresh) {
-      if (provenanceRequest) {
-        provenanceRequest.abort();
-      }
-      var controller = new AbortController();
-      provenanceRequest = controller;
+  var cp = t.closest("[data-copy]");
+  if (cp) { copy(cp.dataset.copy, "Leaf hash"); return; }
 
-      fetch("/api/provenance-graph?refresh=" + Date.now(), {
-        cache: "no-store",
-        signal: controller.signal
-      })
-        .then(r => {
-          if (!r.ok) throw new Error("Graph fetch failed");
-          return r.json();
-        })
-        .then(d => renderTopology(d.nodes || [], d.edges || []))
-        .catch(err => {
-          if (err.name !== "AbortError") console.error("Graph fetch error:", err);
-        })
-        .finally(() => {
-          if (provenanceRequest === controller) provenanceRequest = null;
-        });
-    }
+  var au = t.closest("[data-audit]");
+  if (au) { selectLeaf(au.dataset.audit, { goto: "integrity" }); return; }
 
-    function clearProvenanceGraph() {
-      if (provenanceRequest) {
-        provenanceRequest.abort();
-        provenanceRequest = null;
-      }
-      if (activeSim) {
-        activeSim.stop();
-        activeSim = null;
-      }
-      cachedNodeHash = "";
-      d3.select("#svgGraph").selectAll("*").remove();
+  var row = t.closest("tr[data-leaf]");
+  if (row) { selectLeaf(row.dataset.leaf); return; }
 
-      activeLeaf = "";
-      document.getElementById("dispLeafHash").textContent = "—";
-      document.getElementById("dispTemplate").textContent = "—";
-      document.getElementById("dispEventMeta").innerHTML = `
-        Select any node in the topology to inspect payload and audit proofs.
-      `;
-      document.getElementById("verifyOutcome").style.display = "none";
-      document.getElementById("dispRecomputedRoot").textContent = "—";
-      document.getElementById("dispAnchoredRoot").textContent = "—";
+  var gn = t.closest(".gnode");
+  if (gn && !gfx.moved) {
+    var node = gfx.nodes.filter(function (n) { return n.id === gn.dataset.id; })[0];
+    if (node) selectLeaf(node.data.leafHash);
+  }
+});
 
-      fetch("/api/reset", { method: "POST" })
-        .then(() => manualRefresh());
-    }
+$("btnIngest").addEventListener("click", ingest);
+$("btnSeal").addEventListener("click", sealBatch);
+$("btnSim").addEventListener("click", toggleSim);
+$("btnVerify").addEventListener("click", verify);
+$("btnTamper").addEventListener("click", tamper);
+$("btnBench").addEventListener("click", runBenchmark);
+$("btnMlPreview").addEventListener("click", function () { mlExport(false); });
+$("btnMlDownload").addEventListener("click", function () { mlExport(true); });
+$("btnEvPreview").addEventListener("click", function () { evidenceExport(false); });
+$("btnEvDownload").addEventListener("click", function () { evidenceExport(true); });
+$("btnReset").addEventListener("click", resetSession);
+$("btnGraphRefresh").addEventListener("click", function () { loadGraph(); });
+$("btnLedgerRefresh").addEventListener("click", loadLedger);
+$("btnCopyTip").addEventListener("click", function () {
+  copy(state.status && state.status.chainTip, "Chain tip");
+});
 
-    function renderTopology(nodes, edges) {
-      var currentHash = nodes.map(n => n.id).join(",") + "|" + edges.length;
-      if (currentHash === cachedNodeHash && activeSim) {
-        return; // No new nodes, do not re-run heavy physics simulation!
-      }
-      cachedNodeHash = currentHash;
+/* Ctrl/Cmd+Enter submits the log textarea. */
+$("logInput").addEventListener("keydown", function (e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); ingest(); }
+});
 
-      var svg = d3.select("#svgGraph");
-      if (activeSim) {
-        activeSim.stop();
-      }
-      svg.selectAll("*").remove();
+/* Node dragging in the provenance graph. */
+(function () {
+  var svg = $("graphSvg");
+  svg.addEventListener("mousedown", function (e) {
+    var gn = e.target.closest(".gnode");
+    if (!gn) return;
+    var node = gfx.nodes.filter(function (n) { return n.id === gn.dataset.id; })[0];
+    if (!node) return;
+    gfx.drag = node; gfx.moved = false; node.fixed = true;
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (!gfx.drag) return;
+    var r = svg.getBoundingClientRect();
+    gfx.drag.x = Math.max(PAD, Math.min(gfx.w - PAD, e.clientX - r.left));
+    gfx.drag.y = Math.max(PAD, Math.min(gfx.h - PAD, e.clientY - r.top));
+    gfx.moved = true;
+    gfx.alpha = Math.max(gfx.alpha, 0.35);
+    if (!gfx.anim) gfx.anim = requestAnimationFrame(step);
+  });
+  window.addEventListener("mouseup", function () {
+    if (!gfx.drag) return;
+    gfx.drag.fixed = false;
+    gfx.drag = null;
+    setTimeout(function () { gfx.moved = false; }, 0);
+  });
+})();
 
-      var w = document.getElementById("graphView").clientWidth;
-      var h = document.getElementById("graphView").clientHeight;
+window.addEventListener("resize", function () {
+  if (state.view === "provenance") relayout();
+});
 
-      if (!nodes.length) {
-        svg.append("text")
-          .attr("x", w / 2).attr("y", h / 2)
-          .attr("text-anchor", "middle")
-          .attr("fill", "#8b949e")
-          .attr("font-family", "ui-monospace, monospace")
-          .attr("font-size", "11px")
-          .text("Awaiting telemetry ingestion. Run sequence or submit payload.");
-        return;
-      }
-
-      var colorMap = {
-        1: "#58a6ff",
-        2: "#58a6ff",
-        3: "#d29922",
-        4: "#bc8cff",
-        5: "#bc8cff",
-        6: "#f85149"
-      };
-
-      activeSim = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(edges).id(d => d.id).distance(80))
-        .force("charge", d3.forceManyBody().strength(-140))
-        .force("center", d3.forceCenter(w / 2, h / 2))
-        .force("collision", d3.forceCollide().radius(24))
-        .alphaDecay(0.04); // Settle quickly to save CPU
-
-      var link = svg.append("g")
-        .selectAll("line")
-        .data(edges)
-        .enter().append("line")
-        .attr("class", d => d.confidence && d.confidence.includes("HIGH") ? "d3-edge verified" : "d3-edge");
-
-      // Gamified Hacker / Among Us Impostor Nodes
-      var node = svg.append("g")
-        .selectAll("g.impostor-node")
-        .data(nodes)
-        .enter().append("g")
-        .attr("class", "impostor-node")
-        .style("cursor", "pointer")
-        .on("click", (evt, d) => inspectNode(d));
-
-      // Impostor Backpack
-      node.append("rect")
-        .attr("x", -15)
-        .attr("y", -6)
-        .attr("width", 5)
-        .attr("height", 14)
-        .attr("rx", 2)
-        .attr("fill", d => colorMap[d.stage] || "#8b949e")
-        .attr("stroke", "#0d1117")
-        .attr("stroke-width", 1.2);
-
-      // Impostor Spacesuit Body
-      node.append("path")
-        .attr("d", "M -10,-4 C -10,-14 8,-14 8,-4 L 8,8 C 8,11 6,13 3,13 L 2,13 L 2,16 C 2,18 -2,18 -2,16 L -2,13 L -4,13 L -4,16 C -4,18 -8,18 -8,16 L -8,13 C -10,13 -10,10 -10,8 Z")
-        .attr("fill", d => colorMap[d.stage] || "#8b949e")
-        .attr("stroke", "#0d1117")
-        .attr("stroke-width", 1.4);
-
-      // Impostor Glow/Visor (Cyber Glass)
-      node.append("ellipse")
-        .attr("cx", 2)
-        .attr("cy", -4)
-        .attr("rx", 6.5)
-        .attr("ry", 3.8)
-        .attr("fill", "#c9d1d9")
-        .attr("stroke", "#080b0f")
-        .attr("stroke-width", 1.2);
-
-      // Visor Glare/Reflect
-      node.append("ellipse")
-        .attr("cx", 3)
-        .attr("cy", -5)
-        .attr("rx", 3.2)
-        .attr("ry", 1.4)
-        .attr("fill", "#ffffff")
-        .attr("opacity", 0.85);
-
-      var label = svg.append("g")
-        .selectAll("text")
-        .data(nodes)
-        .enter().append("text")
-        .attr("class", "d3-label")
-        .attr("dx", 14).attr("dy", 4)
-        .text(d => d.mitreId);
-
-      activeSim.on("tick", () => {
-        link
-          .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
-          .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-        node
-          .attr("transform", d => `translate(${Math.max(16, Math.min(w - 16, d.x))}, ${Math.max(18, Math.min(h - 18, d.y))})`);
-        label
-          .attr("x", d => Math.max(16, Math.min(w - 16, d.x)))
-          .attr("y", d => Math.max(18, Math.min(h - 18, d.y)));
-      });
-    }
-
-    function inspectNode(n) {
-      activeLeaf = n.leafHash;
-      document.getElementById("dispLeafHash").textContent = n.leafHash;
-      document.getElementById("dispEventMeta").innerHTML = `
-        <div style="font-weight:600;color:var(--text-bright);">${n.id} &middot; ${n.mitreId} - ${n.mitreTechnique}</div>
-        <div style="color:var(--text-muted);margin:3px 0;">Host: ${n.sourceIp}:${n.destPort} &middot; Service: ${n.service}</div>
-        <div style="color:var(--text);word-break:break-all;margin-top:4px;">${n.raw}</div>
-      `;
-    }
-
-    function verifyActive() {
-      if (!activeLeaf) { alert("Select an event node first."); return; }
-      fetch(`/api/verify?leafHash=${activeLeaf}`)
-        .then(r => r.json())
-        .then(d => renderVerification(d));
-    }
-
-    function tamperActive() {
-      if (!activeLeaf) { alert("Select an event node first."); return; }
-      fetch("/api/tamper-simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leafHash: activeLeaf })
-      })
-      .then(r => r.json())
-      .then(d => renderVerification(d));
-    }
-
-    function renderVerification(d) {
-      var b = document.getElementById("verifyOutcome");
-      b.style.display = "flex";
-      b.className = "verify-box " + (d.valid ? "ok" : "fail");
-      b.innerHTML = `
-        <strong>${d.valid ? "PROOF-INCLUSION VALIDATED" : "INTEGRITY MISMATCH DETECTED"}</strong>
-        <div>${d.message} &middot; Batch: ${d.batchId || "UNCOMMITTED"}</div>
-      `;
-      document.getElementById("dispRecomputedRoot").textContent = d.recomputedRoot || "N/A";
-      document.getElementById("dispAnchoredRoot").textContent = d.anchoredRoot || "N/A";
-      refreshStatus();
-    }
-
-    function loadMatrix() {
-      fetch("/api/mitre-matrix")
-        .then(r => r.json())
-        .then(d => {
-          var c = document.getElementById("matrixContainer");
-          c.innerHTML = (d.tactics || []).map(tac => `
-            <div class="matrix-col">
-              <div class="matrix-col-header">
-                <div class="tactic-tag">${tac.id}</div>
-                <div class="tactic-name">${tac.name}</div>
-              </div>
-              ${(tac.techniques || []).map(tech => `
-                <div class="tech-item ${tech.count > 0 ? 'hit' : ''}">
-                  <div class="tech-code-row">
-                    <span>${tech.id}</span>
-                    <span class="tech-badge-num">${tech.count}</span>
-                  </div>
-                  <div class="tech-label-name">${tech.name}</div>
-                </div>
-              `).join("")}
-            </div>
-          `).join("");
-        });
-    }
-
-    setInterval(() => {
-      refreshStatus();
-      loadGraph();
-      loadMatrix();
-    }, 3000);
-
-    manualRefresh();
+/* Boot */
+renderSamples();
+renderLegend();
+loadMatrix();
+refreshAll();
+setInterval(function () {
+  if (!document.hidden) refreshAll();
+}, POLL_MS);
 </script>
 </body>
 </html>
